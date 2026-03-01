@@ -81,21 +81,13 @@ export function ArticleHeader({ article }: ArticleHeaderProps) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <Badge
-              variant="secondary"
-              className={cn(ARTICLE_STATUS_COLORS[article.status])}
-            >
-              {ARTICLE_STATUS_LABELS[article.status]}
-            </Badge>
-          </div>
-          <h1 className="text-3xl font-bold">{article.title}</h1>
-          {article.excerpt && (
-            <p className="text-lg text-muted-foreground">{article.excerpt}</p>
-          )}
-        </div>
+      <div className="flex items-center justify-between gap-4">
+        <Badge
+          variant="secondary"
+          className={cn(ARTICLE_STATUS_COLORS[article.status])}
+        >
+          {ARTICLE_STATUS_LABELS[article.status]}
+        </Badge>
 
         <div className="flex shrink-0 gap-2">
           {article.status === "draft" && (
@@ -176,6 +168,13 @@ export function ArticleHeader({ article }: ArticleHeaderProps) {
             </DialogContent>
           </Dialog>
         </div>
+      </div>
+
+      <div>
+        <h1 className="text-3xl font-bold">{article.title}</h1>
+        {article.excerpt && (
+          <p className="mt-1 text-lg text-muted-foreground">{article.excerpt}</p>
+        )}
       </div>
 
       <Separator />
