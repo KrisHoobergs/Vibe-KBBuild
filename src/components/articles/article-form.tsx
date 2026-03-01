@@ -64,7 +64,7 @@ export function ArticleForm({ article, allTags }: ArticleFormProps) {
 
       if (result.success) {
         toast.success("Artikel opgeslagen");
-        router.refresh();
+        router.push("/artikelen");
       } else {
         toast.error(result.error ?? "Fout bij opslaan");
       }
@@ -79,7 +79,7 @@ export function ArticleForm({ article, allTags }: ArticleFormProps) {
 
       if (result.success && result.data) {
         toast.success("Artikel aangemaakt");
-        router.push(`/artikelen/${result.data.slug}/bewerken`);
+        router.push("/artikelen");
       } else {
         toast.error(result.error ?? "Fout bij aanmaken");
       }
