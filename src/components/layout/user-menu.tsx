@@ -11,17 +11,18 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getInitials } from "@/lib/utils";
+import { cn, getInitials } from "@/lib/utils";
 import type { Profile } from "@/types";
 
 interface UserMenuProps {
   user: Profile;
+  className?: string;
 }
 
-export function UserMenu({ user }: UserMenuProps) {
+export function UserMenu({ user, className }: UserMenuProps) {
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent transition-colors">
+      <DropdownMenuTrigger className={cn("flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors", className ?? "hover:bg-accent")}>
         <Avatar className="h-8 w-8">
           <AvatarImage src={user.avatar_url ?? undefined} />
           <AvatarFallback className="text-xs">

@@ -11,20 +11,30 @@ interface TopbarProps {
   user: Profile;
 }
 
+const sidebarBtn =
+  "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground";
+
 export function Topbar({ user }: TopbarProps) {
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <MobileNav user={user} />
+    <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b-2 border-sidebar-primary bg-sidebar px-4">
+      <MobileNav user={user} className={sidebarBtn} />
 
-      <div className="flex flex-1 justify-center">
-        <Link href="/artikelen">
-          <Image src="/logo.png" alt="Knowledge Build" width={120} height={28} />
-        </Link>
-      </div>
+      <Link href="/artikelen" className="mr-auto">
+        <Image
+          src="/logo.png"
+          alt="Knowledge Build"
+          width={120}
+          height={28}
+          className="brightness-0 invert"
+        />
+      </Link>
 
       <div className="flex items-center gap-2">
-        <ThemeToggle />
-        <UserMenu user={user} />
+        <ThemeToggle className={sidebarBtn} />
+        <UserMenu
+          user={user}
+          className="text-sidebar-foreground hover:bg-sidebar-accent"
+        />
       </div>
     </header>
   );

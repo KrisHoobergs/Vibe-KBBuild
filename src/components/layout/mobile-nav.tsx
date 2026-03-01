@@ -12,6 +12,7 @@ import type { Profile } from "@/types";
 
 interface MobileNavProps {
   user: Profile;
+  className?: string;
 }
 
 const navItems = [
@@ -25,14 +26,14 @@ const adminItems = [
   { href: "/beheer/gebruikers", label: "Gebruikers", icon: Users },
 ];
 
-export function MobileNav({ user }: MobileNavProps) {
+export function MobileNav({ user, className }: MobileNavProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
-        <Button variant="ghost" size="icon" className="md:hidden">
+        <Button variant="ghost" size="icon" className={cn("md:hidden", className)}>
           <Menu className="h-5 w-5" />
           <span className="sr-only">Menu openen</span>
         </Button>
