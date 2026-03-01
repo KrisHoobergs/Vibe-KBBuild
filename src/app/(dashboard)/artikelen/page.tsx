@@ -1,9 +1,6 @@
-import Link from "next/link";
 import { Suspense } from "react";
-import { Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { ArticleList } from "@/components/articles/article-list";
-import { ArticleSearch } from "@/components/articles/article-search";
+import { ArticleSearchHeader } from "@/components/articles/article-search-header";
 import { getArticles } from "@/actions/articles";
 import { searchArticles } from "@/actions/search";
 import type { ArticleSummary } from "@/types";
@@ -82,45 +79,33 @@ export default async function ArticlesPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Artikelen</h1>
-          <p className="text-sm text-muted-foreground">
-            {query
-              ? `${totalCount} ${totalCount === 1 ? "resultaat" : "resultaten"} voor "${query}"`
-              : `${totalCount} ${totalCount === 1 ? "artikel" : "artikelen"}`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Suspense>
-            <ArticleSearch />
-          </Suspense>
-          <Button asChild>
-            <Link href="/artikelen/nieuw">
-              <Plus className="mr-2 h-4 w-4" />
-              Nieuw artikel
-            </Link>
-          </Button>
-        </div>
-      </div>
+      <Suspense>
+        <ArticleSearchHeader />
+      </Suspense>
 
-      <ArticleList articles={articles} />
+      <div>
+        <p className="mb-3 text-sm text-muted-foreground">
+          {query
+            ? `${totalCount} ${totalCount === 1 ? "resultaat" : "resultaten"} voor "${query}"`
+            : `${totalCount} ${totalCount === 1 ? "artikel" : "artikelen"}`}
+        </p>
+        <ArticleList articles={articles} />
+      </div>
 
       {!query && totalPages > 1 && (
         <div className="flex justify-center gap-2">
           {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <Button
+            <a
               key={p}
-              variant={p === page ? "default" : "outline"}
-              size="sm"
-              asChild
+              href={`/artikelen?page=${p}${params.tag ? `&tag=${params.tag}` : ""}${params.status ? `&status=${params.status}` : ""}`}
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-sm font-medium transition-colors ${
+                p === page
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-input bg-background hover:bg-accent hover:text-accent-foreground"
+              }`}
             >
-              <Link
-                href={`/artikelen?page=${p}${params.tag ? `&tag=${params.tag}` : ""}${params.status ? `&status=${params.status}` : ""}`}
-              >
-                {p}
-              </Link>
-            </Button>
+              {p}
+            </a>
           ))}
         </div>
       )}

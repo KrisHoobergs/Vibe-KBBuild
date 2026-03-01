@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import {
   FileText,
   Tags,
-  Search,
   Settings,
   Users,
   ChevronsLeft,
@@ -28,7 +27,6 @@ interface SidebarProps {
 const navItems = [
   { href: "/artikelen", label: "Artikelen", icon: FileText },
   { href: "/tags", label: "Tags", icon: Tags },
-  { href: "/zoeken", label: "Zoeken", icon: Search },
 ];
 
 const adminItems = [

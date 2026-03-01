@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Menu, FileText, Tags, Search, Settings, Users } from "lucide-react";
+import { Menu, FileText, Tags, Settings, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,6 @@ interface MobileNavProps {
 const navItems = [
   { href: "/artikelen", label: "Artikelen", icon: FileText },
   { href: "/tags", label: "Tags", icon: Tags },
-  { href: "/zoeken", label: "Zoeken", icon: Search },
 ];
 
 const adminItems = [
