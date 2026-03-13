@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/tooltip";
 import { formatDate, getInitials, cn } from "@/lib/utils";
 import { ARTICLE_STATUS_LABELS, ARTICLE_STATUS_ICON_COLORS } from "@/lib/constants";
+import { PinButton } from "./pin-button";
 import type { ArticleSummary } from "@/types";
 
 const STATUS_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -29,6 +30,8 @@ export function ArticleRow({ article }: ArticleRowProps) {
       href={`/artikelen/${article.slug}`}
       className="flex items-center gap-4 px-4 py-3 hover:bg-muted/50 transition-colors"
     >
+      <PinButton articleId={article.id} isPinned={article.is_pinned} />
+
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="shrink-0 w-[28px] flex justify-center">

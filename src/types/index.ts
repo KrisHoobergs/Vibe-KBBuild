@@ -34,6 +34,7 @@ export interface Article {
   reviewer_id: string | null;
   reviewed_at: string | null;
   published_at: string | null;
+  is_pinned: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -54,6 +55,7 @@ export interface ArticleSummary {
   author: Profile;
   tags: Tag[];
   published_at: string | null;
+  is_pinned: boolean;
   created_at: string;
   updated_at: string;
 }

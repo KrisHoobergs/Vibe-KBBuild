@@ -1,4 +1,5 @@
 import { ArticleRow } from "./article-row";
+import { cn } from "@/lib/utils";
 import type { ArticleSummary } from "@/types";
 
 interface ArticleListProps {
@@ -23,6 +24,7 @@ export function ArticleList({ articles }: ArticleListProps) {
     <div className="rounded-lg border bg-card">
       <div className="hidden sm:flex items-center gap-4 px-4 py-2 border-b text-xs font-medium text-muted-foreground">
         <span className="w-[28px]"></span>
+        <span className="w-[28px]"></span>
         <span className="flex-1">Titel</span>
         <span className="hidden md:block">Tags</span>
         <span className="hidden lg:block w-[140px]">Auteur</span>
@@ -30,7 +32,14 @@ export function ArticleList({ articles }: ArticleListProps) {
       </div>
       <div className="divide-y">
         {articles.map((article) => (
-          <ArticleRow key={article.id} article={article} />
+          <div
+            key={article.id}
+            className={cn(
+              article.is_pinned && "bg-amber-50/50 dark:bg-amber-950/20"
+            )}
+          >
+            <ArticleRow article={article} />
+          </div>
         ))}
       </div>
     </div>

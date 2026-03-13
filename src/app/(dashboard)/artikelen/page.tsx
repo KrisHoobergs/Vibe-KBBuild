@@ -61,6 +61,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
           created_at: "",
         })) ?? [],
       published_at: r.published_at,
+      is_pinned: false,
       created_at: "",
       updated_at: "",
     }));
