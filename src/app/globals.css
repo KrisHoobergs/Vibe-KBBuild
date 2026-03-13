@@ -155,3 +155,30 @@
   margin-bottom: 1em;
   font-family: var(--font-heading), serif;
 }
+
+/* Image resize handles */
+.resizable-image-container .resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--primary);
+  border: 2px solid white;
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 10;
+}
+.resizable-image-container:hover .resize-handle,
+.resizable-image-container .resize-handle:active {
+  opacity: 1;
+}
+.resize-handle-br {
+  bottom: 4px;
+  right: 4px;
+  cursor: nwse-resize;
+}
+.resize-handle-bl {
+  bottom: 4px;
+  left: 4px;
+  cursor: nesw-resize;
+}

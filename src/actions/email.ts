@@ -3,7 +3,7 @@
 import { Resend } from "resend";
 import { generateHTML } from "@tiptap/html";
 import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
+import { ResizableImageServer } from "@/components/editor/extensions/resizable-image";
 import Link from "@tiptap/extension-link";
 import Underline from "@tiptap/extension-underline";
 import type { ActionResult } from "@/types";
@@ -28,7 +28,7 @@ export async function sendArticleByEmail(data: {
   // Generate HTML from Tiptap JSON using server-compatible extensions
   const extensions = [
     StarterKit.configure({ codeBlock: false }),
-    Image,
+    ResizableImageServer,
     Link,
     Underline,
   ];

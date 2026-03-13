@@ -1,5 +1,5 @@
 import StarterKit from "@tiptap/starter-kit";
-import Image from "@tiptap/extension-image";
+import { ResizableImage } from "./resizable-image";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
@@ -14,7 +14,7 @@ export const editorExtensions = [
     link: false, // We configure Link separately below
     underline: false, // We configure Underline separately below
   }),
-  Image.configure({
+  ResizableImage.configure({
     inline: false,
     allowBase64: true,
     HTMLAttributes: {
