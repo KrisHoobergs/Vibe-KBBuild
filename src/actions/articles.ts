@@ -223,10 +223,11 @@ export async function getArticles(params?: {
   let query = supabase
     .from("articles")
     .select(
-      "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, created_at, updated_at, author:profiles!author_id(id, email, display_name, avatar_url, is_admin, created_at, updated_at), article_tags(tag:tags(id, name, slug, created_at))",
+      "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, pin_order, created_at, updated_at, author:profiles!author_id(id, email, display_name, avatar_url, is_admin, created_at, updated_at), article_tags(tag:tags(id, name, slug, created_at))",
       { count: "exact" }
     )
     .order("is_pinned", { ascending: false })
+    .order("pin_order", { ascending: true })
     .order("updated_at", { ascending: false })
     .range(from, to);
 
@@ -257,6 +258,7 @@ export async function getArticles(params?: {
       .filter(Boolean) ?? [],
     published_at: item.published_at,
     is_pinned: item.is_pinned,
+    pin_order: item.pin_order,
     created_at: item.created_at,
     updated_at: item.updated_at,
   }));
@@ -308,13 +310,43 @@ export async function togglePinArticle(id: string): Promise<ActionResult> {
     return { success: false, error: "Artikel niet gevonden" };
   }
 
+  let pinOrder = 0;
+  if (!article.is_pinned) {
+    // Bij pinnen: zet pin_order op max + 1
+    const { data: maxRow } = await supabase
+      .from("articles")
+      .select("pin_order")
+      .eq("is_pinned", true)
+      .order("pin_order", { ascending: false })
+      .limit(1)
+      .single();
+    pinOrder = (maxRow?.pin_order ?? -1) + 1;
+  }
+
   const { error } = await supabase
     .from("articles")
-    .update({ is_pinned: !article.is_pinned })
+    .update({ is_pinned: !article.is_pinned, pin_order: pinOrder })
     .eq("id", id);
 
   if (error) {
     return { success: false, error: error.message };
+  }
+
+  revalidatePath("/artikelen");
+  return { success: true };
+}
+
+export async function reorderPinnedArticles(orderedIds: string[]): Promise<ActionResult> {
+  const supabase = await createClient();
+
+  for (let i = 0; i < orderedIds.length; i++) {
+    const { error } = await supabase
+      .from("articles")
+      .update({ pin_order: i })
+      .eq("id", orderedIds[i]);
+    if (error) {
+      return { success: false, error: error.message };
+    }
   }
 
   revalidatePath("/artikelen");

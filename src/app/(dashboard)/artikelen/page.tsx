@@ -62,6 +62,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
         })) ?? [],
       published_at: r.published_at,
       is_pinned: false,
+      pin_order: 0,
       created_at: "",
       updated_at: "",
     }));

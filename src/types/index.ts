@@ -35,6 +35,7 @@ export interface Article {
   reviewed_at: string | null;
   published_at: string | null;
   is_pinned: boolean;
+  pin_order: number;
   created_at: string;
   updated_at: string;
 }
@@ -56,6 +57,7 @@ export interface ArticleSummary {
   tags: Tag[];
   published_at: string | null;
   is_pinned: boolean;
+  pin_order: number;
   created_at: string;
   updated_at: string;
 }
