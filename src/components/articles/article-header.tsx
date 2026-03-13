@@ -27,6 +27,7 @@ import {
   revertToDraft,
 } from "@/actions/articles";
 import { toast } from "sonner";
+import { EmailArticleDialog } from "./email-article-dialog";
 import type { ArticleWithRelations } from "@/types";
 
 interface ArticleHeaderProps {
@@ -133,6 +134,11 @@ export function ArticleHeader({ article }: ArticleHeaderProps) {
               Terugzetten naar concept
             </Button>
           )}
+
+          <EmailArticleDialog
+            article={article}
+            senderName={article.author.display_name}
+          />
 
           <Button variant="outline" size="sm" asChild>
             <Link href={`/artikelen/${article.slug}/bewerken`}>
