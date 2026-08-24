@@ -73,6 +73,12 @@ export function SearchFilters({
     onFilterChange({ query, allStatuses, tags: next });
   }
 
+  function clearTags() {
+    setSelectedTags([]);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    onFilterChange({ query, allStatuses, tags: [] });
+  }
+
   return (
     <div className="space-y-3">
       <div className="relative">
@@ -119,6 +125,16 @@ export function SearchFilters({
                 </button>
               );
             })}
+
+            {selectedTags.length > 0 && (
+              <button
+                type="button"
+                onClick={clearTags}
+                className="ml-1 text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+              >
+                Wis tags
+              </button>
+            )}
           </div>
         )}
       </div>

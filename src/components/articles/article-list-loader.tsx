@@ -1,10 +1,8 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ArticleList } from "./article-list";
-import { ActiveTagFilter } from "./active-tag-filter";
 import { getArticles } from "@/actions/articles";
 import { getPreferences } from "@/actions/preferences";
-import { getAllTags } from "@/actions/tags";
 import { searchArticles } from "@/actions/search";
 import type { ArticleSummary } from "@/types";
 
@@ -102,29 +100,8 @@ export async function ArticleListLoader({
     hasMore = result.hasMore;
   }
 
-  // Namen bij de slugs zoeken, zodat de filterbalk "Bestelbon" toont en niet
-  // de slug. Eén query voor alle tags samen.
-  const activeTags =
-    activeTagSlugs.length > 0
-      ? await getAllTags().then((all) =>
-          activeTagSlugs.map((slug) => ({
-            slug,
-            name: all.find((t) => t.slug === slug)?.name ?? slug,
-          }))
-        )
-      : [];
-
   return (
     <>
-      {activeTags.length > 0 && (
-        <ActiveTagFilter
-          tags={activeTags}
-          urlWithoutTag={(slug) =>
-            buildUrl({ tagSlugs: activeTagSlugs.filter((s) => s !== slug) })
-          }
-        />
-      )}
-
       <div>
         {query && (
           <p className="mb-3 text-sm text-muted-foreground">
