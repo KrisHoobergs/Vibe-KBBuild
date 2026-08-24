@@ -38,6 +38,13 @@ export function SearchFilters({
     getAllTags().then(setTags);
   }, []);
 
+  // De selectie leeft ook in de URL (wisknop, tagkaarten): die wint van de
+  // lokale state, anders blijven knopjes aangevinkt na het wissen.
+  const initialTagsKey = initialTags.join(",");
+  useEffect(() => {
+    setSelectedTags(initialTagsKey ? initialTagsKey.split(",") : []);
+  }, [initialTagsKey]);
+
   useEffect(() => {
     if (autoFocus && inputRef.current) {
       inputRef.current.focus();
@@ -71,12 +78,6 @@ export function SearchFilters({
     // Emit immediately for tag changes
     if (debounceRef.current) clearTimeout(debounceRef.current);
     onFilterChange({ query, allStatuses, tags: next });
-  }
-
-  function clearTags() {
-    setSelectedTags([]);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    onFilterChange({ query, allStatuses, tags: [] });
   }
 
   return (
@@ -125,16 +126,6 @@ export function SearchFilters({
                 </button>
               );
             })}
-
-            {selectedTags.length > 0 && (
-              <button
-                type="button"
-                onClick={clearTags}
-                className="ml-1 text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
-              >
-                Wis tags
-              </button>
-            )}
           </div>
         )}
       </div>
