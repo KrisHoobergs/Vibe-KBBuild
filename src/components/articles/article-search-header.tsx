@@ -11,7 +11,10 @@ export function ArticleSearchHeader() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get("q") ?? "";
-  const [open, setOpen] = useState(!!initialQuery);
+  // Ook openklappen bij een actief tagfilter, anders zie je je eigen selectie niet.
+  const [open, setOpen] = useState(
+    !!initialQuery || searchParams.has("filterTags") || searchParams.has("tag")
+  );
 
   const handleFilterChange = useCallback(
     (filters: { query: string; allStatuses: boolean; tags: string[] }) => {
@@ -62,9 +65,11 @@ export function ArticleSearchHeader() {
               searchParams.get("allStatuses") === "1" ||
               !searchParams.has("allStatuses")
             }
-            initialTags={
-              searchParams.get("filterTags")?.split(",").filter(Boolean) ?? []
-            }
+            initialTags={[
+              ...(searchParams.get("tag") ? [searchParams.get("tag")!] : []),
+              ...(searchParams.get("filterTags")?.split(",").filter(Boolean) ??
+                []),
+            ].filter((slug, i, all) => all.indexOf(slug) === i)}
             autoFocus
             onFilterChange={handleFilterChange}
           />

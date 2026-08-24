@@ -4,7 +4,7 @@ import { ArticleList } from "./article-list";
 import { ActiveTagFilter } from "./active-tag-filter";
 import { getArticles } from "@/actions/articles";
 import { getPreferences } from "@/actions/preferences";
-import { getTagBySlug } from "@/actions/tags";
+import { getAllTags } from "@/actions/tags";
 import { searchArticles } from "@/actions/search";
 import type { ArticleSummary } from "@/types";
 
@@ -28,19 +28,40 @@ export async function ArticleListLoader({
   let articles: ArticleSummary[];
   let resultCount = 0;
   let hasMore = false;
-  let tagName: string | null = null;
+
+  // De enkelvoudige `tag` (tagkaarten, artikelbadges) en de meervoudige
+  // `filterTags` (zoekpaneel) vormen samen één actieve selectie.
+  const activeTagSlugs = [
+    ...(tag ? [tag] : []),
+    ...(filterTags?.split(",").filter(Boolean) ?? []),
+  ].filter((slug, i, all) => all.indexOf(slug) === i);
+
+  /** URL voor een pagina, met alle actieve filters erin. */
+  const buildUrl = (overrides: { page?: number; tagSlugs?: string[] }) => {
+    const slugs = overrides.tagSlugs ?? activeTagSlugs;
+    const params = new URLSearchParams();
+    if (overrides.page && overrides.page > 1) {
+      params.set("page", String(overrides.page));
+    }
+    if (query) params.set("q", query);
+    if (allStatuses) params.set("allStatuses", allStatuses);
+    if (status) params.set("status", status);
+    if (slugs.length > 0) params.set("filterTags", slugs.join(","));
+
+    const qs = params.toString();
+    return qs ? `/artikelen?${qs}` : "/artikelen";
+  };
 
   if (query) {
     const searchAllStatuses = allStatuses === "1" || !allStatuses;
     const statuses = searchAllStatuses
       ? ["draft", "in_review", "published"]
       : ["published"];
-    const selectedTags = filterTags?.split(",").filter(Boolean);
 
     const results = await searchArticles({
       query,
       statuses,
-      tags: selectedTags?.length ? selectedTags : undefined,
+      tags: activeTagSlugs.length ? activeTagSlugs : undefined,
     });
     articles = results.map((r) => ({
       id: r.id,
@@ -70,27 +91,39 @@ export async function ArticleListLoader({
     resultCount = articles.length;
   } else {
     const prefs = await getPreferences();
-    const [result, activeTag] = await Promise.all([
-      getArticles({
-        page,
-        tag,
-        status,
-        perPage: prefs.items_per_page,
-        sort: prefs.default_sort,
-      }),
-      tag ? getTagBySlug(tag) : Promise.resolve(null),
-    ]);
+    const result = await getArticles({
+      page,
+      tags: activeTagSlugs,
+      status,
+      perPage: prefs.items_per_page,
+      sort: prefs.default_sort,
+    });
     articles = result.data;
     hasMore = result.hasMore;
-    tagName = activeTag?.name ?? tag ?? null;
   }
 
-  const pageUrl = (p: number) =>
-    `/artikelen?page=${p}${tag ? `&tag=${tag}` : ""}${status ? `&status=${status}` : ""}`;
+  // Namen bij de slugs zoeken, zodat de filterbalk "Bestelbon" toont en niet
+  // de slug. Eén query voor alle tags samen.
+  const activeTags =
+    activeTagSlugs.length > 0
+      ? await getAllTags().then((all) =>
+          activeTagSlugs.map((slug) => ({
+            slug,
+            name: all.find((t) => t.slug === slug)?.name ?? slug,
+          }))
+        )
+      : [];
 
   return (
     <>
-      {tagName && <ActiveTagFilter tagName={tagName} />}
+      {activeTags.length > 0 && (
+        <ActiveTagFilter
+          tags={activeTags}
+          urlWithoutTag={(slug) =>
+            buildUrl({ tagSlugs: activeTagSlugs.filter((s) => s !== slug) })
+          }
+        />
+      )}
 
       <div>
         {query && (
@@ -105,7 +138,7 @@ export async function ArticleListLoader({
         <div className="flex justify-center items-center gap-2">
           {page > 1 ? (
             <Link
-              href={pageUrl(page - 1)}
+              href={buildUrl({ page: page - 1 })}
               className="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -122,7 +155,7 @@ export async function ArticleListLoader({
           </span>
           {hasMore ? (
             <Link
-              href={pageUrl(page + 1)}
+              href={buildUrl({ page: page + 1 })}
               className="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             >
               Volgende

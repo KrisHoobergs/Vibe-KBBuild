@@ -213,6 +213,7 @@ export async function revertToDraft(id: string): Promise<ActionResult> {
 export async function getArticles(params?: {
   page?: number;
   tag?: string;
+  tags?: string[];
   status?: string;
   perPage?: number;
   sort?: ArticleSort;
@@ -226,18 +227,49 @@ export async function getArticles(params?: {
   // zonder een dure count-query over de hele tabel.
   const to = from + perPage;
 
-  // Bij een tagfilter wordt via "match" een inner join geforceerd, zodat
-  // artikelen zonder die tag wegvallen in plaats van alleen hun tags kwijt te
-  // raken. De ongefilterde article_tags-relatie blijft erbij, zodat elke rij
-  // nog steeds al zijn tags toont en niet alleen de gefilterde.
+  // De enkelvoudige `tag` (tagkaarten, artikelbadges) en de meervoudige `tags`
+  // (zoekpaneel) lopen door hetzelfde pad.
+  const tagSlugs = [
+    ...(params?.tag ? [params.tag] : []),
+    ...(params?.tags ?? []),
+  ].filter((slug, i, all) => slug && all.indexOf(slug) === i);
+
+  // Bij meerdere tags moet een artikel ze ALLEMAAL hebben. PostgREST kan die
+  // AND over meerdere rijen van de join-tabel niet uitdrukken, dus bepaalt een
+  // SQL-functie eerst welke artikel-id's voldoen.
+  let idsWithAllTags: string[] | null = null;
+  if (tagSlugs.length > 1) {
+    const { data: ids } = await supabase.rpc("article_ids_with_all_tags", {
+      tag_slugs: tagSlugs,
+    });
+    idsWithAllTags = (ids as unknown as string[] | null) ?? [];
+
+    if (idsWithAllTags.length === 0) {
+      return { data: [], page, hasMore: false };
+    }
+  }
+
+  // Bij één tag wordt via "match" een inner join geforceerd, zodat artikelen
+  // zonder die tag wegvallen in plaats van alleen hun tags kwijt te raken. De
+  // ongefilterde article_tags-relatie blijft er in alle gevallen bij, zodat elke
+  // rij nog steeds al zijn tags toont en niet alleen de gefilterde.
   const buildQuery = () => {
-    if (params?.tag) {
+    if (idsWithAllTags) {
+      return supabase
+        .from("articles")
+        .select(
+          "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, pin_order, created_at, updated_at, author:profiles!author_id(id, display_name, avatar_url), article_tags(tag:tags(id, name, slug, created_at))"
+        )
+        .in("id", idsWithAllTags);
+    }
+
+    if (tagSlugs.length === 1) {
       return supabase
         .from("articles")
         .select(
           "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, pin_order, created_at, updated_at, author:profiles!author_id(id, display_name, avatar_url), match:article_tags!inner(tag:tags!inner(slug)), article_tags(tag:tags(id, name, slug, created_at))"
         )
-        .eq("match.tag.slug", params.tag);
+        .eq("match.tag.slug", tagSlugs[0]);
     }
 
     return supabase
