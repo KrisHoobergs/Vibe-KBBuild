@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ArticleList } from "./article-list";
+import { ActiveTagFilter } from "./active-tag-filter";
 import { getArticles } from "@/actions/articles";
 import { getPreferences } from "@/actions/preferences";
+import { getTagBySlug } from "@/actions/tags";
 import { searchArticles } from "@/actions/search";
 import type { ArticleSummary } from "@/types";
 
@@ -26,6 +28,7 @@ export async function ArticleListLoader({
   let articles: ArticleSummary[];
   let resultCount = 0;
   let hasMore = false;
+  let tagName: string | null = null;
 
   if (query) {
     const searchAllStatuses = allStatuses === "1" || !allStatuses;
@@ -67,15 +70,19 @@ export async function ArticleListLoader({
     resultCount = articles.length;
   } else {
     const prefs = await getPreferences();
-    const result = await getArticles({
-      page,
-      tag,
-      status,
-      perPage: prefs.items_per_page,
-      sort: prefs.default_sort,
-    });
+    const [result, activeTag] = await Promise.all([
+      getArticles({
+        page,
+        tag,
+        status,
+        perPage: prefs.items_per_page,
+        sort: prefs.default_sort,
+      }),
+      tag ? getTagBySlug(tag) : Promise.resolve(null),
+    ]);
     articles = result.data;
     hasMore = result.hasMore;
+    tagName = activeTag?.name ?? tag ?? null;
   }
 
   const pageUrl = (p: number) =>
@@ -83,6 +90,8 @@ export async function ArticleListLoader({
 
   return (
     <>
+      {tagName && <ActiveTagFilter tagName={tagName} />}
+
       <div>
         {query && (
           <p className="mb-3 text-sm text-muted-foreground">

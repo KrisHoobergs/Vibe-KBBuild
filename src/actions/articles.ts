@@ -226,11 +226,28 @@ export async function getArticles(params?: {
   // zonder een dure count-query over de hele tabel.
   const to = from + perPage;
 
-  let query = supabase
-    .from("articles")
-    .select(
-      "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, pin_order, created_at, updated_at, author:profiles!author_id(id, display_name, avatar_url), article_tags(tag:tags(id, name, slug, created_at))"
-    )
+  // Bij een tagfilter wordt via "match" een inner join geforceerd, zodat
+  // artikelen zonder die tag wegvallen in plaats van alleen hun tags kwijt te
+  // raken. De ongefilterde article_tags-relatie blijft erbij, zodat elke rij
+  // nog steeds al zijn tags toont en niet alleen de gefilterde.
+  const buildQuery = () => {
+    if (params?.tag) {
+      return supabase
+        .from("articles")
+        .select(
+          "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, pin_order, created_at, updated_at, author:profiles!author_id(id, display_name, avatar_url), match:article_tags!inner(tag:tags!inner(slug)), article_tags(tag:tags(id, name, slug, created_at))"
+        )
+        .eq("match.tag.slug", params.tag);
+    }
+
+    return supabase
+      .from("articles")
+      .select(
+        "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, pin_order, created_at, updated_at, author:profiles!author_id(id, display_name, avatar_url), article_tags(tag:tags(id, name, slug, created_at))"
+      );
+  };
+
+  let query = buildQuery()
     .order("is_pinned", { ascending: false })
     .order("pin_order", { ascending: true })
     .order(sort, { ascending: sort === "title" })
@@ -238,10 +255,6 @@ export async function getArticles(params?: {
 
   if (params?.status && params.status !== "all") {
     query = query.eq("status", params.status);
-  }
-
-  if (params?.tag) {
-    query = query.eq("article_tags.tag.slug", params.tag);
   }
 
   const { data, error } = await query;

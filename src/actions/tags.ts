@@ -60,6 +60,17 @@ export async function getAllTags(): Promise<Tag[]> {
   return data ?? [];
 }
 
+export async function getTagBySlug(slug: string): Promise<Tag | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("tags")
+    .select("*")
+    .eq("slug", slug)
+    .single();
+
+  return data ?? null;
+}
+
 export async function getTagsWithCounts(): Promise<TagWithCount[]> {
   const supabase = await createClient();
 
