@@ -90,7 +90,7 @@ export function SearchFilters({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-        <div className="relative max-w-md flex-1 min-w-[240px]">
+        <div className="relative flex-1 min-w-[240px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             ref={inputRef}
@@ -101,7 +101,7 @@ export function SearchFilters({
           />
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex shrink-0 items-center space-x-2">
           <Checkbox
             id="search-include-all"
             checked={allStatuses}
