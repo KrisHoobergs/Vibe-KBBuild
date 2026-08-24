@@ -27,7 +27,7 @@ import {
   revertToDraft,
 } from "@/actions/articles";
 import { toast } from "sonner";
-import { EmailArticleDialog } from "./email-article-dialog";
+import { MailArticleMenu } from "./mail-article-menu";
 import type { ArticleWithRelations } from "@/types";
 
 interface ArticleHeaderProps {
@@ -135,7 +135,7 @@ export function ArticleHeader({ article }: ArticleHeaderProps) {
             </Button>
           )}
 
-          <EmailArticleDialog
+          <MailArticleMenu
             article={article}
             senderName={article.author.display_name}
           />
