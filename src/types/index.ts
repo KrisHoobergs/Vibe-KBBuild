@@ -93,7 +93,6 @@ export interface ActionResult<T = void> {
 
 export interface PaginatedResult<T> {
   data: T[];
-  count: number;
   page: number;
-  totalPages: number;
+  hasMore: boolean;
 }

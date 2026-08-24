@@ -1,4 +1,6 @@
 import { Suspense } from "react";
+import Link from "next/link";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ArticleList } from "@/components/articles/article-list";
 import { ArticleSearchHeader } from "@/components/articles/article-search-header";
 import { getArticles } from "@/actions/articles";
@@ -22,8 +24,8 @@ export default async function ArticlesPage({ searchParams }: Props) {
   const query = params.q?.trim();
 
   let articles: ArticleSummary[];
-  let totalCount: number;
-  let totalPages: number;
+  let resultCount = 0;
+  let hasMore = false;
 
   if (query) {
     const allStatuses = params.allStatuses === "1" || !params.allStatuses;
@@ -66,8 +68,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
       created_at: "",
       updated_at: "",
     }));
-    totalCount = articles.length;
-    totalPages = 1;
+    resultCount = articles.length;
   } else {
     const result = await getArticles({
       page,
@@ -75,9 +76,11 @@ export default async function ArticlesPage({ searchParams }: Props) {
       status: params.status,
     });
     articles = result.data;
-    totalCount = result.count;
-    totalPages = result.totalPages;
+    hasMore = result.hasMore;
   }
+
+  const pageUrl = (p: number) =>
+    `/artikelen?page=${p}${params.tag ? `&tag=${params.tag}` : ""}${params.status ? `&status=${params.status}` : ""}`;
 
   return (
     <div className="space-y-6">
@@ -86,29 +89,47 @@ export default async function ArticlesPage({ searchParams }: Props) {
       </Suspense>
 
       <div>
-        <p className="mb-3 text-sm text-muted-foreground">
-          {query
-            ? `${totalCount} ${totalCount === 1 ? "resultaat" : "resultaten"} voor "${query}"`
-            : `${totalCount} ${totalCount === 1 ? "artikel" : "artikelen"}`}
-        </p>
+        {query && (
+          <p className="mb-3 text-sm text-muted-foreground">
+            {`${resultCount} ${resultCount === 1 ? "resultaat" : "resultaten"} voor "${query}"`}
+          </p>
+        )}
         <ArticleList articles={articles} />
       </div>
 
-      {!query && totalPages > 1 && (
-        <div className="flex justify-center gap-2">
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-            <a
-              key={p}
-              href={`/artikelen?page=${p}${params.tag ? `&tag=${params.tag}` : ""}${params.status ? `&status=${params.status}` : ""}`}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-sm font-medium transition-colors ${
-                p === page
-                  ? "bg-primary text-primary-foreground"
-                  : "border border-input bg-background hover:bg-accent hover:text-accent-foreground"
-              }`}
+      {!query && (page > 1 || hasMore) && (
+        <div className="flex justify-center items-center gap-2">
+          {page > 1 ? (
+            <Link
+              href={pageUrl(page - 1)}
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             >
-              {p}
-            </a>
-          ))}
+              <ChevronLeft className="h-4 w-4" />
+              Vorige
+            </Link>
+          ) : (
+            <span className="inline-flex h-8 items-center gap-1 rounded-md border border-input px-3 text-sm font-medium text-muted-foreground opacity-50">
+              <ChevronLeft className="h-4 w-4" />
+              Vorige
+            </span>
+          )}
+          <span className="px-2 text-sm text-muted-foreground">
+            Pagina {page}
+          </span>
+          {hasMore ? (
+            <Link
+              href={pageUrl(page + 1)}
+              className="inline-flex h-8 items-center gap-1 rounded-md border border-input bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              Volgende
+              <ChevronRight className="h-4 w-4" />
+            </Link>
+          ) : (
+            <span className="inline-flex h-8 items-center gap-1 rounded-md border border-input px-3 text-sm font-medium text-muted-foreground opacity-50">
+              Volgende
+              <ChevronRight className="h-4 w-4" />
+            </span>
+          )}
         </div>
       )}
     </div>

@@ -218,13 +218,14 @@ export async function getArticles(params?: {
   const supabase = await createClient();
   const page = params?.page ?? 1;
   const from = (page - 1) * ITEMS_PER_PAGE;
-  const to = from + ITEMS_PER_PAGE - 1;
+  // Haal één rij extra op om te weten of er een volgende pagina is,
+  // zonder een dure count-query over de hele tabel.
+  const to = from + ITEMS_PER_PAGE;
 
   let query = supabase
     .from("articles")
     .select(
-      "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, pin_order, created_at, updated_at, author:profiles!author_id(id, email, display_name, avatar_url, is_admin, created_at, updated_at), article_tags(tag:tags(id, name, slug, created_at))",
-      { count: "exact" }
+      "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, pin_order, created_at, updated_at, author:profiles!author_id(id, email, display_name, avatar_url, is_admin, created_at, updated_at), article_tags(tag:tags(id, name, slug, created_at))"
     )
     .order("is_pinned", { ascending: false })
     .order("pin_order", { ascending: true })
@@ -239,13 +240,15 @@ export async function getArticles(params?: {
     query = query.eq("article_tags.tag.slug", params.tag);
   }
 
-  const { data, count, error } = await query;
+  const { data, error } = await query;
 
   if (error || !data) {
-    return { data: [], count: 0, page, totalPages: 0 };
+    return { data: [], page, hasMore: false };
   }
 
-  const articles: ArticleSummary[] = data.map((item) => ({
+  const hasMore = data.length > ITEMS_PER_PAGE;
+
+  const articles: ArticleSummary[] = data.slice(0, ITEMS_PER_PAGE).map((item) => ({
     id: item.id,
     title: item.title,
     slug: item.slug,
@@ -265,9 +268,8 @@ export async function getArticles(params?: {
 
   return {
     data: articles,
-    count: count ?? 0,
     page,
-    totalPages: Math.ceil((count ?? 0) / ITEMS_PER_PAGE),
+    hasMore,
   };
 }
 
