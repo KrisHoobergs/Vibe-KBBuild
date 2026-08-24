@@ -35,3 +35,16 @@ export const ACCEPTED_VIDEO_TYPES = [
 ];
 
 export const ITEMS_PER_PAGE = 20;
+
+export const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50, 100] as const;
+
+export const THEME_LABELS: Record<string, string> = {
+  light: "Licht",
+  dark: "Donker",
+  system: "Systeem",
+};
+
+export const ARTICLE_SORT_LABELS: Record<string, string> = {
+  updated_at: "Laatst gewijzigd",
+  title: "Titel (A-Z)",
+};

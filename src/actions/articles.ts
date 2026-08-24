@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { slugify } from "@/lib/utils";
-import type { ActionResult, Article, ArticleWithRelations, ArticleSummary, PaginatedResult } from "@/types";
+import type { ActionResult, Article, ArticleWithRelations, ArticleSort, ArticleSummary, PaginatedResult } from "@/types";
 import { ITEMS_PER_PAGE } from "@/lib/constants";
 
 export async function createArticle(data: {
@@ -214,22 +214,26 @@ export async function getArticles(params?: {
   page?: number;
   tag?: string;
   status?: string;
+  perPage?: number;
+  sort?: ArticleSort;
 }): Promise<PaginatedResult<ArticleSummary>> {
   const supabase = await createClient();
   const page = params?.page ?? 1;
-  const from = (page - 1) * ITEMS_PER_PAGE;
+  const perPage = params?.perPage ?? ITEMS_PER_PAGE;
+  const sort = params?.sort ?? "updated_at";
+  const from = (page - 1) * perPage;
   // Haal één rij extra op om te weten of er een volgende pagina is,
   // zonder een dure count-query over de hele tabel.
-  const to = from + ITEMS_PER_PAGE;
+  const to = from + perPage;
 
   let query = supabase
     .from("articles")
     .select(
-      "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, pin_order, created_at, updated_at, author:profiles!author_id(id, email, display_name, avatar_url, is_admin, created_at, updated_at), article_tags(tag:tags(id, name, slug, created_at))"
+      "id, title, slug, excerpt, cover_image_url, status, published_at, is_pinned, pin_order, created_at, updated_at, author:profiles!author_id(id, display_name, avatar_url), article_tags(tag:tags(id, name, slug, created_at))"
     )
     .order("is_pinned", { ascending: false })
     .order("pin_order", { ascending: true })
-    .order("updated_at", { ascending: false })
+    .order(sort, { ascending: sort === "title" })
     .range(from, to);
 
   if (params?.status && params.status !== "all") {
@@ -246,9 +250,9 @@ export async function getArticles(params?: {
     return { data: [], page, hasMore: false };
   }
 
-  const hasMore = data.length > ITEMS_PER_PAGE;
+  const hasMore = data.length > perPage;
 
-  const articles: ArticleSummary[] = data.slice(0, ITEMS_PER_PAGE).map((item) => ({
+  const articles: ArticleSummary[] = data.slice(0, perPage).map((item) => ({
     id: item.id,
     title: item.title,
     slug: item.slug,

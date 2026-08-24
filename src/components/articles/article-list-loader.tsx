@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { ArticleList } from "./article-list";
 import { getArticles } from "@/actions/articles";
+import { getPreferences } from "@/actions/preferences";
 import { searchArticles } from "@/actions/search";
 import type { ArticleSummary } from "@/types";
 
@@ -47,12 +48,8 @@ export async function ArticleListLoader({
       status: r.status,
       author: {
         id: "",
-        email: "",
         display_name: r.author_name,
         avatar_url: null,
-        is_admin: false,
-        created_at: "",
-        updated_at: "",
       },
       tags:
         r.tags?.map((t) => ({
@@ -69,7 +66,14 @@ export async function ArticleListLoader({
     }));
     resultCount = articles.length;
   } else {
-    const result = await getArticles({ page, tag, status });
+    const prefs = await getPreferences();
+    const result = await getArticles({
+      page,
+      tag,
+      status,
+      perPage: prefs.items_per_page,
+      sort: prefs.default_sort,
+    });
     articles = result.data;
     hasMore = result.hasMore;
   }

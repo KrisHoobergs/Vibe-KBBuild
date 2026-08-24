@@ -1,7 +1,13 @@
 import { Skeleton } from "@/components/ui/skeleton";
 import { ITEMS_PER_PAGE } from "@/lib/constants";
 
-export function ArticleListSkeleton() {
+interface ArticleListSkeletonProps {
+  rows?: number;
+}
+
+export function ArticleListSkeleton({
+  rows = ITEMS_PER_PAGE,
+}: ArticleListSkeletonProps) {
   return (
     <div className="rounded-lg border bg-card">
       <div className="hidden sm:flex items-center gap-4 px-4 py-2 border-b text-xs font-medium text-muted-foreground">
@@ -13,7 +19,7 @@ export function ArticleListSkeleton() {
         <span className="w-[80px] text-right">Gewijzigd</span>
       </div>
       <div className="divide-y">
-        {Array.from({ length: ITEMS_PER_PAGE }, (_, i) => (
+        {Array.from({ length: rows }, (_, i) => (
           <div key={i} className="flex items-center gap-4 px-4 py-3">
             <Skeleton className="h-4 w-[28px]" />
             <Skeleton className="h-4 w-[28px]" />

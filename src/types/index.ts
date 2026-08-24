@@ -1,11 +1,17 @@
 export type ArticleStatus = "draft" | "in_review" | "published";
 
+export type Theme = "light" | "dark" | "system";
+export type ArticleSort = "updated_at" | "title";
+
 export interface Profile {
   id: string;
   email: string;
   display_name: string;
   avatar_url: string | null;
   is_admin: boolean;
+  theme: Theme;
+  items_per_page: number;
+  default_sort: ArticleSort;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +52,13 @@ export interface ArticleWithRelations extends Article {
   tags: Tag[];
 }
 
+/** Wat de artikellijst van een auteur toont; geen volledig profiel nodig. */
+export interface ArticleAuthor {
+  id: string;
+  display_name: string;
+  avatar_url: string | null;
+}
+
 export interface ArticleSummary {
   id: string;
   title: string;
@@ -53,7 +66,7 @@ export interface ArticleSummary {
   excerpt: string | null;
   cover_image_url: string | null;
   status: ArticleStatus;
-  author: Profile;
+  author: ArticleAuthor;
   tags: Tag[];
   published_at: string | null;
   is_pinned: boolean;
