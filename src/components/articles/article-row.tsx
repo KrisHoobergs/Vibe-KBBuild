@@ -10,6 +10,7 @@ import {
 import { formatDate, getInitials, cn } from "@/lib/utils";
 import { ARTICLE_STATUS_LABELS, ARTICLE_STATUS_ICON_COLORS } from "@/lib/constants";
 import { PinButton } from "./pin-button";
+import { RowLinkIndicator } from "./row-link-indicator";
 import type { ArticleSummary } from "@/types";
 
 const STATUS_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -76,7 +77,8 @@ export function ArticleRow({ article }: ArticleRowProps) {
         </span>
       </div>
 
-      <span className="text-xs text-muted-foreground shrink-0 w-[80px] text-right">
+      <span className="flex items-center justify-end gap-1.5 text-xs text-muted-foreground shrink-0 w-[80px] text-right">
+        <RowLinkIndicator />
         {formatDate(article.updated_at)}
       </span>
     </Link>
