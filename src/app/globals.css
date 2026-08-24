@@ -183,6 +183,48 @@
   cursor: nesw-resize;
 }
 
+/* Printweergave: forceer het lichte schema, ook als html de dark-class heeft.
+   Sidebar-/chart-tokens zijn hier niet nodig; de printroute gebruikt ze niet. */
+.print-light {
+  --background: #FFFFFF;
+  --foreground: #1A4C58;
+  --card: #FFFFFF;
+  --card-foreground: #1A4C58;
+  --primary: #1A4C58;
+  --primary-foreground: #FFFFFF;
+  --secondary: #ECEFF3;
+  --secondary-foreground: #1A4C58;
+  --muted: #ECEFF3;
+  --muted-foreground: #5A7A83;
+  --accent: #FCB50D;
+  --accent-foreground: #023B49;
+  --destructive: #DC2626;
+  --border: #D1D9E0;
+  --input: #D1D9E0;
+  /* Zonder dit strippen browsers highlight- en codeblokachtergronden bij het printen */
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+  .print-light .ProseMirror h1,
+  .print-light .ProseMirror h2,
+  .print-light .ProseMirror h3 {
+    break-after: avoid;
+  }
+  .print-light .ProseMirror pre,
+  .print-light .ProseMirror blockquote,
+  .print-light .ProseMirror img {
+    break-inside: avoid;
+  }
+  .print-light a {
+    color: inherit;
+  }
+}
+
 /* Editor list styling */
 .ProseMirror ul {
   list-style-type: disc;

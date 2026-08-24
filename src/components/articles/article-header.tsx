@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Pencil, Trash2, Send, CheckCircle, RotateCcw } from "lucide-react";
+import { Pencil, Printer, Trash2, Send, CheckCircle, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -90,7 +90,7 @@ export function ArticleHeader({ article }: ArticleHeaderProps) {
           {ARTICLE_STATUS_LABELS[article.status]}
         </Badge>
 
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
           {article.status === "draft" && (
             <Button
               variant="outline"
@@ -139,6 +139,13 @@ export function ArticleHeader({ article }: ArticleHeaderProps) {
             article={article}
             senderName={article.author.display_name}
           />
+
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/artikelen/${article.slug}/afdrukken`} target="_blank">
+              <Printer className="mr-2 h-4 w-4" />
+              Afdrukken / PDF
+            </Link>
+          </Button>
 
           <Button variant="outline" size="sm" asChild>
             <Link href={`/artikelen/${article.slug}/bewerken`}>

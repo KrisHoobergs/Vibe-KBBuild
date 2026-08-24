@@ -1,9 +1,10 @@
 import Image from "@tiptap/extension-image";
-import { ReactNodeViewRenderer } from "@tiptap/react";
-import { ResizableImageComponent } from "./resizable-image-component";
 import { mergeAttributes } from "@tiptap/core";
 
-export const ResizableImage = Image.extend({
+// Server-safe variant zonder NodeView, voor generateHTML (mail, printweergave).
+// Staat in een eigen bestand omdat resizable-image.ts @tiptap/react en de
+// React-component importeert, wat in een server component niet laadbaar is.
+export const ResizableImageServer = Image.extend({
   addAttributes() {
     return {
       ...this.parent?.(),
@@ -29,11 +30,4 @@ export const ResizableImage = Image.extend({
       mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
     ];
   },
-
-  addNodeView() {
-    return ReactNodeViewRenderer(ResizableImageComponent);
-  },
 });
-
-// De server-safe variant (voor generateHTML) staat in resizable-image-server.ts,
-// zodat server components dit bestand — met zijn @tiptap/react-import — niet laden.

@@ -2,10 +2,7 @@
 
 import { Resend } from "resend";
 import { generateHTML } from "@tiptap/html";
-import StarterKit from "@tiptap/starter-kit";
-import { ResizableImageServer } from "@/components/editor/extensions/resizable-image";
-import Link from "@tiptap/extension-link";
-import Underline from "@tiptap/extension-underline";
+import { serverExtensions } from "@/components/editor/extensions/server";
 import type { ActionResult } from "@/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -25,17 +22,9 @@ export async function sendArticleByEmail(data: {
     return { success: false, error: "Ongeldig emailadres" };
   }
 
-  // Generate HTML from Tiptap JSON using server-compatible extensions
-  const extensions = [
-    StarterKit.configure({ codeBlock: false }),
-    ResizableImageServer,
-    Link,
-    Underline,
-  ];
-
   let contentHtml: string;
   try {
-    contentHtml = generateHTML(data.articleContent as Parameters<typeof generateHTML>[0], extensions);
+    contentHtml = generateHTML(data.articleContent as Parameters<typeof generateHTML>[0], serverExtensions);
   } catch {
     return { success: false, error: "Kon artikelinhoud niet converteren naar HTML" };
   }
@@ -59,7 +48,7 @@ export async function sendArticleByEmail(data: {
 
   try {
     const { error } = await resend.emails.send({
-      from: "Know-How Space <onboarding@resend.dev>",
+      from: process.env.RESEND_FROM ?? "Know-How Space <onboarding@resend.dev>",
       to: data.to,
       subject: `Artikel: ${data.articleTitle}`,
       html,
