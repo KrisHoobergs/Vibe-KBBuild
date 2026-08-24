@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Search, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
@@ -80,20 +81,26 @@ export function SearchFilters({
     onFilterChange({ query, allStatuses, tags: next });
   }
 
+  function clearTags() {
+    setSelectedTags([]);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    onFilterChange({ query, allStatuses, tags: [] });
+  }
+
   return (
     <div className="space-y-3">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          ref={inputRef}
-          value={query}
-          onChange={(e) => handleQueryChange(e.target.value)}
-          placeholder="Zoek in artikelen..."
-          className="pl-9"
-        />
-      </div>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="relative max-w-md flex-1 min-w-[240px]">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            ref={inputRef}
+            value={query}
+            onChange={(e) => handleQueryChange(e.target.value)}
+            placeholder="Zoek in artikelen..."
+            className="pl-9"
+          />
+        </div>
 
-      <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
         <div className="flex items-center space-x-2">
           <Checkbox
             id="search-include-all"
@@ -104,9 +111,11 @@ export function SearchFilters({
             Ook concepten en ter beoordeling
           </Label>
         </div>
+      </div>
 
-        {tags.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5">
+      {tags.length > 0 && (
+        <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-1.5 flex-1">
             <span className="text-xs text-muted-foreground mr-1">Tags:</span>
             {tags.map((tag) => {
               const isSelected = selectedTags.includes(tag.slug);
@@ -127,8 +136,18 @@ export function SearchFilters({
               );
             })}
           </div>
-        )}
-      </div>
+
+          {selectedTags.length > 0 && (
+            <Button
+              onClick={clearTags}
+              className="shrink-0 bg-accent text-accent-foreground hover:bg-accent/90"
+            >
+              <X className="mr-2 h-4 w-4" />
+              Wis tags
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

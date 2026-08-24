@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, ChevronUp, Plus, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchFilters } from "./search-filters";
 
@@ -16,19 +16,6 @@ export function ArticleSearchHeader() {
     !!initialQuery || searchParams.has("filterTags") || searchParams.has("tag")
   );
 
-  const activeTags = [
-    ...(searchParams.get("tag") ? [searchParams.get("tag")!] : []),
-    ...(searchParams.get("filterTags")?.split(",").filter(Boolean) ?? []),
-  ].filter((slug, i, all) => all.indexOf(slug) === i);
-
-  function clearTags() {
-    const params = new URLSearchParams(searchParams);
-    params.delete("tag");
-    params.delete("filterTags");
-    params.delete("page");
-    const qs = params.toString();
-    router.push(qs ? `/artikelen?${qs}` : "/artikelen");
-  }
 
   const handleFilterChange = useCallback(
     (filters: { query: string; allStatuses: boolean; tags: string[] }) => {
@@ -63,27 +50,18 @@ export function ArticleSearchHeader() {
             <ChevronDown className="h-4 w-4" />
           )}
         </button>
-        <div className="flex items-center gap-2">
-          {activeTags.length > 0 && (
-            <Button
-              onClick={clearTags}
-              className="bg-accent text-accent-foreground hover:bg-accent/90"
-            >
-              <X className="mr-2 h-4 w-4" />
-              Wis tags
-            </Button>
-          )}
-          <Button asChild>
-            <Link href="/artikelen/nieuw">
-              <Plus className="mr-2 h-4 w-4" />
-              Nieuw artikel
-            </Link>
-          </Button>
-        </div>
+        <Button asChild>
+          <Link href="/artikelen/nieuw">
+            <Plus className="mr-2 h-4 w-4" />
+            Nieuw artikel
+          </Link>
+        </Button>
       </div>
 
       {open && (
-        <div className="rounded-lg border bg-card p-4">
+        // Geen kader of padding: zo lijnen het zoekveld en de wisknop binnenin
+        // uit met "Zoeken" en "Nieuw artikel" in de kopregel erboven.
+        <div>
           <SearchFilters
             initialQuery={initialQuery}
             initialAllStatuses={
