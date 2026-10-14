@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   FileText,
@@ -22,6 +22,8 @@ import type { Profile } from "@/types";
 
 interface SidebarProps {
   user: Profile;
+  collapsed: boolean;
+  onToggle: () => void;
 }
 
 const navItems = [
@@ -34,9 +36,8 @@ const adminItems = [
   { href: "/beheer/gebruikers", label: "Gebruikers", icon: Users },
 ];
 
-export function Sidebar({ user }: SidebarProps) {
+export function Sidebar({ user, collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
-  const [collapsed, setCollapsed] = useState(false);
 
   return (
     <aside
@@ -46,12 +47,14 @@ export function Sidebar({ user }: SidebarProps) {
       )}
     >
       <div className="flex h-full flex-col">
-        <div className="flex h-14 items-center border-b border-sidebar-border px-2">
+        {/* overflow-hidden: tijdens het uitklappen is de sidebar nog smal,
+            het logo mag dan niet over de topbar heen vallen. */}
+        <div className="flex h-14 items-center gap-3 overflow-hidden border-b border-sidebar-border px-2">
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setCollapsed(!collapsed)}
-            className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            onClick={onToggle}
+            className="h-8 w-8 shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
           >
             {collapsed ? (
               <ChevronsRight className="h-4 w-4" />
@@ -59,6 +62,18 @@ export function Sidebar({ user }: SidebarProps) {
               <ChevronsLeft className="h-4 w-4" />
             )}
           </Button>
+          {/* Ingeklapt is hier geen plaats; dan staat het logo in de topbar. */}
+          {!collapsed && (
+            <Link href="/artikelen" className="shrink-0">
+              <Image
+                src="/logo.png"
+                alt="Knowledge Build"
+                width={120}
+                height={28}
+                className="brightness-0 invert"
+              />
+            </Link>
+          )}
         </div>
 
         <nav className={cn("flex-1 space-y-1", collapsed ? "p-2" : "p-3")}>

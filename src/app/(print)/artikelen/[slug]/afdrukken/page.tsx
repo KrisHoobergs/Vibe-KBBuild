@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { generateHTML } from "@tiptap/html";
+import { generateHTML } from "@tiptap/html/server";
 import { getArticleBySlug } from "@/actions/articles";
 import { serverExtensions } from "@/components/editor/extensions/server";
 import { PrintToolbar } from "@/components/articles/print-toolbar";

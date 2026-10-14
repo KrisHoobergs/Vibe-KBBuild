@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getArticleBySlug } from "@/actions/articles";
+import { getMailSettingsStatus } from "@/actions/mail";
 import { ArticleHeader } from "@/components/articles/article-header";
 import { ArticleRenderer } from "@/components/editor/renderers/article-renderer";
 import { estimateReadingTime } from "@/lib/utils";
@@ -10,7 +11,10 @@ interface Props {
 
 export default async function ArticlePage({ params }: Props) {
   const { slug } = await params;
-  const article = await getArticleBySlug(slug);
+  const [article, mailStatus] = await Promise.all([
+    getArticleBySlug(slug),
+    getMailSettingsStatus(),
+  ]);
 
   if (!article) {
     notFound();
@@ -21,7 +25,7 @@ export default async function ArticlePage({ params }: Props) {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <ArticleHeader article={article} />
+      <ArticleHeader article={article} mailStatus={mailStatus} />
 
       <div className="text-sm text-muted-foreground">
         {readingTime} min leestijd

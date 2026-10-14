@@ -58,7 +58,11 @@ export function TiptapEditor({
     if (editor && !editor.isDestroyed && !contentApplied.current && Object.keys(content).length > 0) {
       const currentContent = editor.getJSON();
       if (JSON.stringify(currentContent) !== JSON.stringify(content)) {
-        editor.commands.setContent(content);
+        // Laden is geen wijziging van de gebruiker: zonder emitUpdate: false
+        // (Tiptap v3 default = true) zou onChange vuren en lijkt het formulier
+        // gewijzigd. De stringify-vergelijking verschilt bijna altijd, omdat
+        // JSONB de sleutelvolgorde wijzigt.
+        editor.commands.setContent(content, { emitUpdate: false });
       }
       contentApplied.current = true;
     }

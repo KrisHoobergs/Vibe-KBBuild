@@ -98,6 +98,12 @@ export interface Invitation {
   created_at: string;
 }
 
+/** Of de gebruiker Gmail heeft ingesteld; het app-wachtwoord komt nooit mee. */
+export interface MailSettingsStatus {
+  configured: boolean;
+  gmail_address: string | null;
+}
+
 export interface ActionResult<T = void> {
   success: boolean;
   data?: T;

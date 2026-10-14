@@ -105,8 +105,10 @@ function ToolbarButton({
 }
 
 export function Toolbar({ editor, onImageUpload, onVideoEmbed }: ToolbarProps) {
+  // Sticky zodat de werkbalk bij lange artikelen onder de topbar blijft staan;
+  // de negatieve top heft main's p-4/md:p-6 op (sticky telt die padding mee).
   return (
-    <div className="flex flex-wrap items-center gap-0.5 rounded-t-md border border-b-0 bg-background p-1">
+    <div className="sticky -top-4 z-10 flex flex-wrap items-center gap-0.5 rounded-t-md border border-b-0 bg-background p-1 md:-top-6">
       <ToolbarButton
         onClick={() => editor.chain().focus().undo().run()}
         disabled={!editor.can().undo()}
