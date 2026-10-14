@@ -52,15 +52,23 @@ export function SendArticleDialog({ slug, title, mailStatus, trigger }: SendArti
     if (!canSend || isSending) return;
 
     startSending(async () => {
-      const result = await sendArticleByMail({ slug, to: recipients, message });
-      if (result.success && result.data) {
-        const count = result.data.count;
-        toast.success(`Verstuurd naar ${count} ${count === 1 ? "ontvanger" : "ontvangers"}`);
-        setTo("");
-        setMessage("");
-        setOpen(false);
-      } else {
-        toast.error(result.error ?? "Versturen mislukt");
+      try {
+        const result = await sendArticleByMail({ slug, to: recipients, message });
+        if (result.success && result.data) {
+          const count = result.data.count;
+          toast.success(`Verstuurd naar ${count} ${count === 1 ? "ontvanger" : "ontvangers"}`);
+          setTo("");
+          setMessage("");
+          setOpen(false);
+        } else {
+          toast.error(result.error ?? "Versturen mislukt");
+        }
+      } catch (error) {
+        // Bv. een crash of time-out van de serveractie: nooit stil falen.
+        console.error("Versturen mislukt:", error);
+        toast.error(
+          `Versturen mislukt: ${error instanceof Error ? error.message : "onbekende fout"}`
+        );
       }
     });
   }

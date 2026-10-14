@@ -161,12 +161,22 @@ export async function sendArticleByMail(input: {
     .single();
   const senderName = profile?.display_name ?? gmail_address;
 
-  const email = await buildArticleEmail({
-    article,
-    senderName,
-    message: parsed.data.message || undefined,
-    articleUrl: `${await siteUrl()}/artikelen/${article.slug}`,
-  });
+  let email: Awaited<ReturnType<typeof buildArticleEmail>>;
+  try {
+    email = await buildArticleEmail({
+      article,
+      senderName,
+      message: parsed.data.message || undefined,
+      articleUrl: `${await siteUrl()}/artikelen/${article.slug}`,
+    });
+  } catch (error) {
+    // Volledige fout in de serverlog (Vercel); de gebruiker krijgt de kern.
+    console.error("Mail opbouwen mislukt:", error);
+    return {
+      success: false,
+      error: `Kon de mail niet opbouwen: ${error instanceof Error ? error.message : "onbekende fout"}`,
+    };
+  }
 
   try {
     await createTransport(gmail_address, app_password).sendMail({
