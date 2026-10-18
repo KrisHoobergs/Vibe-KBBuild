@@ -190,8 +190,11 @@ docker compose cp kennisbank.dump db:/tmp/kennisbank.dump
 docker compose exec -T db pg_restore -U kennisbank -d kennisbank --clean --if-exists /tmp/kennisbank.dump
 docker compose start app
 docker compose cp bestanden.tgz app:/tmp/bestanden.tgz
+docker compose exec -T -u root app chown node:node /tmp/bestanden.tgz
 docker compose exec -T app tar xzf /tmp/bestanden.tgz -C /data/bestanden
 ```
+
+**Logboek:** `docker compose logs --tail 200 app`.
 
 ---
 
@@ -208,6 +211,11 @@ docker compose exec -T app tar xzf /tmp/bestanden.tgz -C /data/bestanden
      TEMPLATE template0 ENCODING 'UTF8'
      LOCALE_PROVIDER icu ICU_LOCALE 'nl-NL' LOCALE 'C.UTF-8';
    ```
+
+   Voer de twee opdrachten één voor één uit: samen in één keer geeft
+   PostgreSQL de fout *CREATE DATABASE cannot run inside a transaction
+   block*. In pgAdmin (Query Tool op de database `postgres`): selecteer één
+   opdracht en druk F5. In `psql` (SQL Shell) mag je ze samen plakken.
 
    Op Windows heet de locale anders; gebruik daar `LOCALE 'en-US'` in plaats
    van `'C.UTF-8'`. Gebruik **nooit** `LOCALE 'C'`: dan splitst het zoeken
@@ -251,15 +259,29 @@ docker compose exec -T app tar xzf /tmp/bestanden.tgz -C /data/bestanden
    ```powershell
    nssm install Kennisbank "C:\Program Files\nodejs\node.exe" "C:\kennisbank\.next\standalone\server.js"
    nssm set Kennisbank AppDirectory C:\kennisbank\.next\standalone
-   nssm set Kennisbank AppEnvironmentExtra DATABASE_URL=… AUTH_DRIVER=local STORAGE_DRIVER=filesystem STORAGE_DIR=D:\kennisbank\bestanden REGISTRATIE=uitnodiging DB_AUTO_MIGRATE=true SITE_URL=https://… BETTER_AUTH_SECRET=… MAIL_ENCRYPTION_KEY=… PORT=3000
+   nssm set Kennisbank AppEnvironmentExtra DATABASE_URL=… AUTH_DRIVER=local STORAGE_DRIVER=filesystem STORAGE_DIR=D:\kennisbank\bestanden REGISTRATIE=uitnodiging DB_AUTO_MIGRATE=true SITE_URL=https://… BETTER_AUTH_SECRET=… MAIL_ENCRYPTION_KEY=… PORT=3000 HOSTNAME=127.0.0.1
    nssm set Kennisbank DependOnService postgresql-x64-17
+   nssm set Kennisbank AppStdout D:\kennisbank\logboek.txt
+   nssm set Kennisbank AppStderr D:\kennisbank\logboek.txt
+   nssm set Kennisbank AppRotateFiles 1
+   nssm set Kennisbank AppRotateBytes 10485760
    nssm start Kennisbank
    ```
 
-   `DependOnService` alleen als PostgreSQL op dezelfde server draait (de naam
-   van de dienst staat in *Services*); zo start de kennisbank na een herstart
-   pas als de database draait. Op Linux kan hetzelfde met een systemd-service
-   (`After=postgresql.service`).
+   - `HOSTNAME=127.0.0.1` alleen als de reverse proxy op dezelfde server
+     draait; anders weglaten.
+   - **Let op:** `nssm set Kennisbank AppEnvironmentExtra …` vervangt telkens
+     de hele lijst. Geef dus altijd alle variabelen samen op, of wijzig ze via
+     `nssm edit Kennisbank` (tabblad *Environment*), en doe daarna
+     `nssm restart Kennisbank`.
+   - `DependOnService` alleen als PostgreSQL op dezelfde server draait (de
+     naam van de dienst staat in *Services*); zo start de kennisbank na een
+     herstart pas als de database draait.
+   - Het logboek komt in `D:\kennisbank\logboek.txt` (buiten `C:\kennisbank`,
+     want de build maakt `.next` leeg).
+
+   Op Linux kan hetzelfde met een systemd-service (`After=postgresql.service`;
+   logboek: `journalctl -u <dienst> -n 200`).
 
 5. Open `/status` en registreer jezelf meteen via het adres uit `SITE_URL`
    (bij een `https://`-adres: pas als de reverse proxy werkt).
@@ -282,9 +304,25 @@ nssm start Kennisbank
 
 Op Linux idem, met `systemctl stop` en `systemctl start`.
 
-**Back-up:** `pg_dump -U kennisbank -Fc -f kennisbank.dump kennisbank` (met
-`-f`, niet met `>`), een kopie van de map `STORAGE_DIR`, en de instellingen
-van stap 3 (vooral `MAIL_ENCRYPTION_KEY`).
+**Back-up.** De PostgreSQL-installer zet `pg_dump` niet in het PATH, dus met
+het volledige pad, en altijd met `-f` (niet met `>`):
+
+```powershell
+& "C:\Program Files\PostgreSQL\17\bin\pg_dump.exe" -h localhost -U kennisbank -Fc -f kennisbank.dump kennisbank
+```
+
+Bewaar daarbij een kopie van de map `STORAGE_DIR` en de instellingen van
+stap 3 (vooral `MAIL_ENCRYPTION_KEY`). Op Linux:
+`pg_dump -h localhost -U kennisbank -Fc -f kennisbank.dump kennisbank`.
+
+**Terugzetten:**
+
+```powershell
+nssm stop Kennisbank
+& "C:\Program Files\PostgreSQL\17\bin\pg_restore.exe" -h localhost -U kennisbank -d kennisbank --clean --if-exists kennisbank.dump
+# zet daarna de inhoud van de map STORAGE_DIR terug uit de back-up
+nssm start Kennisbank
+```
 
 ---
 
@@ -299,17 +337,25 @@ Zet de kennisbank achter een reverse proxy die HTTPS verzorgt. Belangrijk:
 - De proxy moet **X-Forwarded-For** zetten met het IP van de bezoeker. De
   begrenzing van inlogpogingen gebruikt het laatste adres in die header.
 - De proxy moet verzoeken tot ongeveer **60 MB** doorlaten (video's tot 50 MB).
-- Draait de proxy op dezelfde server, maak poort 3000 dan alleen lokaal
-  bereikbaar, zodat niemand de proxy (en HTTPS) kan overslaan:
-  - Docker: `POORT=127.0.0.1:3000` in `.env`, daarna `docker compose up -d`.
-    Docker omzeilt de firewall van de server (ufw), dus dit is nodig.
-  - Zonder Docker: `HOSTNAME=127.0.0.1` bij de instellingen van de dienst.
+- Maak poort 3000 alleen bereikbaar voor de proxy, zodat niemand de proxy
+  (en HTTPS) kan overslaan en zelf een X-Forwarded-For kan meesturen:
+  - Proxy op dezelfde server, met Docker: `POORT=127.0.0.1:3000` in `.env`,
+    daarna `docker compose up -d`. Docker omzeilt de firewall van de server
+    (ufw), dus dit is nodig.
+  - Proxy op dezelfde server, zonder Docker: `HOSTNAME=127.0.0.1` in de
+    volledige lijst van D, stap 4.
+  - Proxy op een andere server: een firewallregel die poort 3000 alleen voor
+    het IP van de proxy openzet.
+- Zonder proxy (rechtstreeks via `http://<server>:3000`, alleen op het eigen
+  netwerk) werkt alles, maar kan iemand zijn IP-adres vervalsen: de
+  begrenzing van inlogpogingen telt dan in feite alleen per e-mailadres (50
+  per kwartier).
 
 **Caddy** (regelt HTTPS zelf, ook op Windows de eenvoudigste keuze):
 
 ```
 kennis.voorbeeld.be {
-    reverse_proxy localhost:3000
+    reverse_proxy 127.0.0.1:3000
 }
 ```
 
@@ -355,7 +401,7 @@ Host-header en laat het maar ±28 MB per verzoek toe:
              <serverVariables>
                <set name="HTTP_X_FORWARDED_PROTO" value="https" />
              </serverVariables>
-             <action type="Rewrite" url="http://localhost:3000/{R:1}" />
+             <action type="Rewrite" url="http://127.0.0.1:3000/{R:1}" />
            </rule>
          </rules>
        </rewrite>
@@ -372,19 +418,22 @@ Host-header en laat het maar ±28 MB per verzoek toe:
 
 ## Problemen oplossen
 
-Kijk eerst op **`/status`**.
+Kijk eerst op **`/status`**. Meer details staan in het logboek van de server:
+Docker `docker compose logs --tail 200 app`, Windows-dienst
+`D:\kennisbank\logboek.txt` (zie D, stap 4), Linux `journalctl -u <dienst> -n 200`.
 
 | Melding of symptoom | Oorzaak en oplossing |
 |---|---|
 | Configuratie: *DATABASE_URL ontbreekt* | Sleutel ontbreekt of is fout gespeld (bv. `DATABSE_URL`). |
 | Configuratie: *DATABASE_URL is geen geldige URL* | Er staat iets anders dan het adres in, bv. `psql '…'` of `DATABASE_URL=…`. Of het wachtwoord in het adres bevat `#`, `/`, `?` of `%` (zie D, stap 1). |
-| Configuratie: *BETTER_AUTH_SECRET …* / *SITE_URL ontbreekt* | Instelling toevoegen (zie de tabellen hierboven). Op een Vercel-preview is dit normaal (zie B, stap 2.3). |
+| Configuratie: *BETTER_AUTH_SECRET …* / *SITE_URL ontbreekt* | Instelling toevoegen (zie de tabellen hierboven). |
+| Vercel-preview: `/status` geeft een serverfout, `/api/gezondheid` meldt *DATABASE_URL ontbreekt* | Normaal: de instellingen staan bewust alleen op Production (zie B, stap 2.3). Zet voor Preview nooit het adres van de echte database. |
 | Configuratie: *STORAGE_DIR moet een absoluut pad zijn* | Een volledig pad gebruiken, buiten de map van de code (zie D, stap 3). |
-| Database: *code 28P01* | Verkeerd databasewachtwoord. Docker: `POSTGRES_PASSWORD` geldt alleen bij de eerste start, dus later wijzigen in `.env` helpt niet. Zet het oude terug, of pas het in de database aan: `docker compose exec db psql -U kennisbank -d kennisbank -c "ALTER USER kennisbank PASSWORD '<nieuw>'"`. |
+| Database: *code 28P01* | Verkeerd databasewachtwoord. Docker: `POSTGRES_PASSWORD` geldt alleen bij de eerste start, dus later wijzigen in `.env` helpt niet. Zet het oude terug in `.env` en voer `docker compose up -d` uit (niet `restart`, dat leest `.env` niet opnieuw). Of pas het in de database aan: `docker compose exec db psql -U kennisbank -d kennisbank -c "ALTER USER kennisbank PASSWORD '<nieuw>'"`, daarna `docker compose restart app`. |
 | Database: *ENOTFOUND* / *timeout* | Verkeerde host, of de database is (nog) niet bereikbaar. Bij Neon: even wachten en opnieuw laden. |
 | Migraties: fout | De melding staat erbij. Was de database alleen even onbereikbaar, dan probeert de app het elke minuut opnieuw. Anders: oplossen en herstarten (of opnieuw deployen). |
 | Sleutel voor het mailen: rood | `MAIL_ENCRYPTION_KEY` is geen base64-sleutel van 32 bytes. Maak een nieuwe (zie B, stap 2.3); er is nog niets mee versleuteld als niemand Gmail kon instellen. |
-| Inloggen of opslaan mislukt, log toont *Invalid Server Actions request* | De reverse proxy geeft de Host-header niet door (IIS: `preserveHostHeader`, nginx: `proxy_set_header Host $host`). |
+| Inloggen of opslaan mislukt, het logboek toont *… does not match `origin` header …* / *Invalid Server Actions request* | De reverse proxy geeft de Host-header niet door (IIS: `preserveHostHeader`, nginx: `proxy_set_header Host $host`). |
 | Inloggen lukt, maar je wordt meteen uitgelogd | `SITE_URL` klopt niet met het adres in de browser (http/https, domein). Bv. je opent `http://<server>:3000` terwijl `SITE_URL` met `https://` begint: gebruik het adres uit `SITE_URL`. |
 | *Registreren kan alleen met een uitnodiging* | Er bestaat al een account (misschien het jouwe: zie de rij hierboven). Anders: vraag de beheerder een uitnodiging. |
 | Alle afbeeldingen en video's geven 404 | `STORAGE_DRIVER` (of `STORAGE_DIR`) is gewijzigd nadat er bestanden waren. Zet de oude waarde terug. |

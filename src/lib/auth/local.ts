@@ -16,8 +16,11 @@ import type { AuthDriver } from "./types";
 // - IP over alle accounts: 30 (één bron die wachtwoorden uitprobeert);
 // - e-mailadres over alle IP's: 50 (verspreide aanval op één account).
 // Zo kan iemand een ander niet met 5 pogingen buitensluiten. Het IP komt uit
-// x-forwarded-for (zie clientIp): Vercel en een reverse proxy zetten die
-// header; zonder proxy vult Next.js hem met het adres van de verbinding.
+// x-forwarded-for (zie clientIp). Dat is alleen betrouwbaar als een proxy die
+// header zet (Vercel, Caddy, de nginx- en IIS-voorbeelden in de handleiding):
+// Next.js vult hem alleen met het adres van de verbinding als de client hem
+// níet meestuurt. Is poort 3000 rechtstreeks bereikbaar, dan kan een client
+// zelf een IP kiezen en helpt alleen de limiet per e-mailadres.
 const VENSTER_MS = 15 * 60 * 1000;
 const LIMIET = { ipEmail: 5, ip: 30, email: 50 };
 const MAX_SLEUTELS = 10_000;

@@ -68,6 +68,9 @@ jobs:
 
       - name: Back-up zoals in docs/installatie.md
         run: |
+          # Iets om terug te vinden: een tag en een bestand.
+          docker compose exec -T db psql -U kennisbank -d kennisbank -c "INSERT INTO tags (name, slug) VALUES ('Back-uptest', 'back-uptest')"
+          docker compose exec -T app sh -c 'mkdir -p /data/bestanden/articles/ci && echo hallo > /data/bestanden/articles/ci/test.txt'
           docker compose exec -T db pg_dump -U kennisbank -Fc -f /tmp/kennisbank.dump kennisbank
           docker compose cp db:/tmp/kennisbank.dump kennisbank.dump
           docker compose exec -T app tar czf /tmp/bestanden.tgz -C /data/bestanden .
@@ -76,6 +79,28 @@ jobs:
           docker compose exec -T db pg_restore -l /tmp/kennisbank.dump | grep -q "TABLE public articles"
           test "$(head -c 5 kennisbank.dump)" = "PGDMP"
           tar tzf bestanden.tgz > /dev/null
+
+      - name: Terugzetten zoals in docs/installatie.md
+        run: |
+          # Gegevens "kwijtraken", en de back-up streng afschermen zoals een voorzichtige beheerder doet.
+          docker compose exec -T db psql -U kennisbank -d kennisbank -c "DELETE FROM tags"
+          docker compose exec -T app rm -rf /data/bestanden/articles
+          chmod 600 kennisbank.dump bestanden.tgz
+          docker compose stop app
+          docker compose cp kennisbank.dump db:/tmp/kennisbank.dump
+          docker compose exec -T db pg_restore -U kennisbank -d kennisbank --clean --if-exists /tmp/kennisbank.dump
+          docker compose start app
+          docker compose cp bestanden.tgz app:/tmp/bestanden.tgz
+          docker compose exec -T -u root app chown node:node /tmp/bestanden.tgz
+          docker compose exec -T app tar xzf /tmp/bestanden.tgz -C /data/bestanden
+          # Alles terug, en de installatie weer gezond.
+          test "$(docker compose exec -T db psql -U kennisbank -d kennisbank -tAc "SELECT count(*) FROM tags WHERE slug = 'back-uptest'")" = "1"
+          test "$(docker compose exec -T app cat /data/bestanden/articles/ci/test.txt)" = "hallo"
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:3000/api/gezondheid; then echo; exit 0; fi
+            sleep 2
+          done
+          echo "Niet gezond na het terugzetten"; exit 1
 
       - name: Logboek
         if: always()

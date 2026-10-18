@@ -13,3 +13,6 @@ scripts/.tmp
 *.tsbuildinfo
 Dockerfile
 docker-compose.yml
+# Back-ups uit docs/installatie.md (dump en bestandenarchief).
+*.dump
+*.tgz

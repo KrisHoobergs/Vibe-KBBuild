@@ -51,3 +51,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# back-ups (docs/installatie.md)
+*.dump
+*.tgz
