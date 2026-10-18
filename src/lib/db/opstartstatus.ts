@@ -17,11 +17,23 @@ export function leesOpstartstatus(): Opstartstatus {
   return globaal.__kbOpstart ?? { migraties: "niet-automatisch" };
 }
 
-/** Een foutmelding zonder geheimen: alleen de soort fout en een code. */
+/**
+ * Een foutmelding zonder geheimen: soort fout, code en de tekst, waaruit alles
+ * wat op een verbindingsadres, host, e-mailadres of IP-adres lijkt, gewist is.
+ */
 export function veiligeFoutmelding(error: unknown): string {
   if (error instanceof Error && error.name === "ConfigFout") return error.message;
-  const e = error as { code?: unknown; name?: unknown };
+  const e = error as { code?: unknown; name?: unknown; message?: unknown };
   const code = typeof e?.code === "string" || typeof e?.code === "number" ? String(e.code) : null;
   const naam = typeof e?.name === "string" ? e.name : "Error";
-  return code ? `${naam} (code ${code})` : naam;
+  const tekst =
+    typeof e?.message === "string"
+      ? e.message
+          .replace(/\S+:\/\/\S+/g, "[adres]")
+          .replace(/\S+@\S+/g, "[adres]")
+          .replace(/\b(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?\b/g, "[ip]")
+          .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+){2,}\b/gi, "[host]")
+          .slice(0, 200)
+      : "";
+  return `${naam}${code ? ` (code ${code})` : ""}${tekst ? `: ${tekst}` : ""}`;
 }
