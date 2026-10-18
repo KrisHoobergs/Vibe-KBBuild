@@ -1,7 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser, NIET_INGELOGD } from "@/lib/auth";
+import {
+  deleteTagById,
+  getTagBySlugFromDb,
+  insertTag,
+  listTags,
+  listTagsWithCounts,
+} from "@/lib/db/repositories/tags";
 import { createTagSchema } from "@/lib/validations/tag";
 import { slugify } from "@/lib/utils";
 import type { ActionResult, Tag, TagWithCount } from "@/types";
@@ -15,34 +22,30 @@ export async function createTag(formData: FormData): Promise<ActionResult<Tag>> 
     return { success: false, error: parsed.error.issues[0].message };
   }
 
-  const supabase = await createClient();
-  const slug = slugify(parsed.data.name);
+  if (!(await getCurrentUser())) return NIET_INGELOGD;
 
-  const { data, error } = await supabase
-    .from("tags")
-    .insert({ name: parsed.data.name, slug })
-    .select()
-    .single();
-
-  if (error) {
-    if (error.code === "23505") {
+  try {
+    const resultaat = await insertTag(parsed.data.name, slugify(parsed.data.name));
+    if (!resultaat.ok) {
       return { success: false, error: "Deze tag bestaat al" };
     }
-    return { success: false, error: error.message };
+    revalidatePath("/tags");
+    revalidatePath("/artikelen");
+    return { success: true, data: resultaat.tag };
+  } catch (error) {
+    console.error("Tag aanmaken mislukt:", error);
+    return { success: false, error: "Tag aanmaken mislukt" };
   }
-
-  revalidatePath("/tags");
-  revalidatePath("/artikelen");
-  return { success: true, data };
 }
 
 export async function deleteTag(id: string): Promise<ActionResult> {
-  const supabase = await createClient();
+  if (!(await getCurrentUser())) return NIET_INGELOGD;
 
-  const { error } = await supabase.from("tags").delete().eq("id", id);
-
-  if (error) {
-    return { success: false, error: error.message };
+  try {
+    await deleteTagById(id);
+  } catch (error) {
+    console.error("Tag verwijderen mislukt:", error);
+    return { success: false, error: "Tag verwijderen mislukt" };
   }
 
   revalidatePath("/tags");
@@ -51,38 +54,16 @@ export async function deleteTag(id: string): Promise<ActionResult> {
 }
 
 export async function getAllTags(): Promise<Tag[]> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("tags")
-    .select("*")
-    .order("name");
-
-  return data ?? [];
+  if (!(await getCurrentUser())) return [];
+  return listTags();
 }
 
 export async function getTagBySlug(slug: string): Promise<Tag | null> {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("tags")
-    .select("*")
-    .eq("slug", slug)
-    .single();
-
-  return data ?? null;
+  if (!(await getCurrentUser())) return null;
+  return getTagBySlugFromDb(slug);
 }
 
 export async function getTagsWithCounts(): Promise<TagWithCount[]> {
-  const supabase = await createClient();
-
-  const { data: tags } = await supabase
-    .from("tags")
-    .select("*, article_tags(count)")
-    .order("name");
-
-  if (!tags) return [];
-
-  return tags.map((tag) => ({
-    ...tag,
-    article_count: (tag.article_tags as unknown as { count: number }[])?.[0]?.count ?? 0,
-  }));
+  if (!(await getCurrentUser())) return [];
+  return listTagsWithCounts();
 }

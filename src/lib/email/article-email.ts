@@ -5,6 +5,7 @@ import { generateHTML } from "@tiptap/html/server";
 import { imageSize } from "image-size";
 import { serverExtensions } from "@/components/editor/extensions/server";
 import { APP_NAME } from "@/lib/constants";
+import { getStorage } from "@/lib/storage";
 import type { ArticleWithRelations } from "@/types";
 
 /** Breedste afbeelding in de mail; klassiek Outlook negeert max-width. */
@@ -167,33 +168,23 @@ async function loadImage(src: string): Promise<{
     };
   }
 
-  if (!isOwnStorageUrl(src)) return null;
+  // Alleen bestanden uit de eigen opslag, rechtstreeks via de storage-driver
+  // (geen HTTP-verzoek naar willekeurige URL's).
+  const storage = getStorage();
+  const eigen = storage.resolveOwnUrl(src);
+  if (!eigen) return null;
 
   try {
-    const response = await fetch(src, { signal: AbortSignal.timeout(10_000) });
-    const contentType = response.headers.get("content-type")?.split(";")[0] ?? "";
-    if (!response.ok || !contentType.startsWith("image/")) return null;
+    const bestand = await storage.get(eigen.bucket, eigen.pad);
+    const contentType = bestand?.contentType.split(";")[0] ?? "";
+    if (!bestand || !contentType.startsWith("image/")) return null;
     return {
-      content: Buffer.from(await response.arrayBuffer()),
+      content: bestand.data,
       contentType,
       extension: extensionFor(contentType),
     };
   } catch {
     return null;
-  }
-}
-
-function isOwnStorageUrl(src: string): boolean {
-  try {
-    const url = new URL(src);
-    const storageHost = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL!).host;
-    return (
-      url.protocol === "https:" &&
-      url.host === storageHost &&
-      url.pathname.startsWith("/storage/v1/object/public/")
-    );
-  } catch {
-    return false;
   }
 }
 

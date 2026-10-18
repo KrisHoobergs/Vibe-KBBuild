@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isAuthPagina, isOpenPagina } from "@/lib/auth/paths";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -29,43 +30,29 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Do not run code between createServerClient and supabase.auth.getUser().
+  // Do not run code between createServerClient and supabase.auth.getClaims().
   // A simple mistake could make it very hard to debug issues with users being
   // randomly logged out.
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  //
+  // getClaims ververst een verlopen sessie (nieuwe cookies via setAll) en
+  // controleert de JWT; met een asymmetrische sleutel zonder netwerkverzoek.
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims.sub ? data.claims : null;
 
   const pathname = request.nextUrl.pathname;
 
   // Auth pages - redirect to dashboard if already logged in
-  const authPages = ["/inloggen", "/registreren", "/wachtwoord-vergeten"];
-  if (user && authPages.some((page) => pathname.startsWith(page))) {
+  if (user && isAuthPagina(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/artikelen";
     return NextResponse.redirect(url);
   }
 
-  // Invitation pages are accessible without login
-  if (pathname.startsWith("/uitnodiging")) {
-    return supabaseResponse;
-  }
-
-  // Protected routes - redirect to login if not authenticated
-  const protectedPaths = [
-    "/artikelen",
-    "/tags",
-    "/zoeken",
-    "/profiel",
-    "/beheer",
-  ];
-  if (
-    !user &&
-    protectedPaths.some((path) => pathname.startsWith(path))
-  ) {
+  // Standaard dicht: alles behalve de inlog- en open pagina's vraagt een login.
+  if (!user && !isAuthPagina(pathname) && !isOpenPagina(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/inloggen";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 
