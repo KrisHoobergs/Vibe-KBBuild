@@ -6,8 +6,9 @@ import type { JSONContent } from "@tiptap/core";
 
 /**
  * In de editor zet ProseMirror na een harde return (Shift+Enter) aan het einde
- * van een alinea nog een extra <br>, zodat die lege regel zichtbaar blijft. In
- * gewone HTML valt hij weg. Daarom hier nog een hardBreak erbij.
+ * van een alinea, en na een regeleinde aan het einde van een codeblok, nog een
+ * extra <br>, zodat die lege regel zichtbaar blijft. In gewone HTML valt hij
+ * weg. Daarom hier hetzelfde nog eens erbij.
  */
 export function metSlotBreak(node: JSONContent): JSONContent {
   if (!node.content) return node;
@@ -15,6 +16,9 @@ export function metSlotBreak(node: JSONContent): JSONContent {
   const laatste = kinderen[kinderen.length - 1];
   if (laatste?.type === "hardBreak") {
     kinderen.push({ type: "hardBreak", ...(laatste.marks ? { marks: laatste.marks } : {}) });
+  }
+  if (node.type === "codeBlock" && laatste?.type === "text" && laatste.text?.endsWith("\n")) {
+    kinderen[kinderen.length - 1] = { ...laatste, text: laatste.text + "\n" };
   }
   return { ...node, content: kinderen };
 }

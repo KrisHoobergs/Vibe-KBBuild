@@ -19,11 +19,25 @@ function supabaseVoor(url: string, anonKey: string): SupabaseClient {
   return client;
 }
 
+/**
+ * Uploadt een bestand en geeft de URL terug. Gooit nooit: een netwerkfout of
+ * een mislukte server action (bv. na een nieuwe deploy) wordt een gewone
+ * foutmelding, zodat de editor zijn upload-teller altijd kan terugzetten.
+ */
 export async function uploadBestand(
   file: File,
   soort: UploadSoort,
   articleId?: string
 ): Promise<ActionResult<{ url: string }>> {
+  try {
+    return await upload(file, soort, articleId);
+  } catch (error) {
+    console.error("Upload mislukt:", error);
+    return { success: false, error: "Uploaden is mislukt" };
+  }
+}
+
+async function upload(file: File, soort: UploadSoort, articleId?: string): Promise<ActionResult<{ url: string }>> {
   const ticket = await prepareUpload({
     soort,
     contentType: file.type,

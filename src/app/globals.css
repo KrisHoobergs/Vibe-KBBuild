@@ -150,11 +150,6 @@
 .ProseMirror pre > code:empty::before {
   content: "\200b";
 }
-/* In de editor staat een afbeelding in een inline-block met wat ruimte eronder;
-   in de leesweergave (HTML van de server) hetzelfde. */
-.tiptap.ProseMirror > img {
-  margin-bottom: 0.4375rem;
-}
 
 /* Editor: plek waar een geplakte of gesleepte afbeelding komt, tijdens het uploaden. */
 .afbeelding-upload {

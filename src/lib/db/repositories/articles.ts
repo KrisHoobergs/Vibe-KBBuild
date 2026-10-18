@@ -226,14 +226,18 @@ export async function getArticleWithRelations(slug: string): Promise<ArticleWith
   return { ...naarArticle(rij), author, reviewer, tags };
 }
 
-/** Alleen de inhoud van een artikel (voor de afbeeldingsroute). */
-export async function getArticleContentById(id: string): Promise<Record<string, unknown> | null> {
+/** Alleen de inhoud en de versie van een artikel (voor de afbeeldingsroute). */
+export async function getArticleContentById(
+  id: string
+): Promise<{ content: Record<string, unknown>; updated_at: string } | null> {
   const rij = await getDb()
     .selectFrom("articles")
-    .select("articles.content")
+    .select(["articles.content", "articles.updated_at"])
     .where("articles.id", "=", id)
     .executeTakeFirst();
-  return rij ? parseJson<Record<string, unknown>>(rij.content, {}) : null;
+  return rij
+    ? { content: parseJson<Record<string, unknown>>(rij.content, {}), updated_at: toIso(rij.updated_at) }
+    : null;
 }
 
 // ---------------------------------------------------------------- schrijven

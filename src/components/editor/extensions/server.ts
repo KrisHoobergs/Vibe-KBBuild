@@ -25,6 +25,7 @@ function maakServerExtensions(opties: { codeblokStijl?: string; luieAfbeeldingen
     ResizableImageServer.configure({
       inline: false,
       allowBase64: true,
+      zoalsEditor: !!opties.luieAfbeeldingen,
       HTMLAttributes: {
         class: "rounded-md max-w-full",
         // Pas laden als je in de buurt scrolt (niet voor afdrukken of mail).

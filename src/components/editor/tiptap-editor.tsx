@@ -96,17 +96,19 @@ export function TiptapEditor({
       if (!file || !editor) return;
 
       zetBezig(true);
-      const result = await uploadBestand(file, "afbeelding", articleId ?? "temp");
-      if (result.success && result.data) {
-        editor.chain().focus().setImage({ src: result.data.url }).run();
-      } else {
-        toast.error(result.error ?? "Fout bij uploaden van afbeelding");
-      }
-      zetBezig(false);
-
-      // Reset input
-      if (imageInputRef.current) {
-        imageInputRef.current.value = "";
+      try {
+        const result = await uploadBestand(file, "afbeelding", articleId ?? "temp");
+        if (result.success && result.data) {
+          editor.chain().focus().setImage({ src: result.data.url }).run();
+        } else {
+          toast.error(result.error ?? "Fout bij uploaden van afbeelding");
+        }
+      } finally {
+        // Altijd terugzetten, anders blijft opslaan geblokkeerd.
+        zetBezig(false);
+        if (imageInputRef.current) {
+          imageInputRef.current.value = "";
+        }
       }
     },
     [editor, articleId, zetBezig]
@@ -154,23 +156,26 @@ export function TiptapEditor({
       if (!file || !editor) return;
 
       zetBezig(true);
-      const result = await uploadBestand(file, "video", articleId ?? "temp");
-      if (result.success && result.data) {
-        editor
-          .chain()
-          .focus()
-          .insertContent(
-            `<div data-video-upload="true" class="my-4"><video controls src="${result.data.url}" style="width: 100%; border-radius: 8px;"></video></div>`
-          )
-          .run();
-        setVideoDialogOpen(false);
-      } else {
-        toast.error(result.error ?? "Fout bij uploaden van video");
-      }
-      zetBezig(false);
-
-      if (videoInputRef.current) {
-        videoInputRef.current.value = "";
+      try {
+        const result = await uploadBestand(file, "video", articleId ?? "temp");
+        if (result.success && result.data) {
+          editor
+            .chain()
+            .focus()
+            .insertContent(
+              `<div data-video-upload="true" class="my-4"><video controls src="${result.data.url}" style="width: 100%; border-radius: 8px;"></video></div>`
+            )
+            .run();
+          setVideoDialogOpen(false);
+        } else {
+          toast.error(result.error ?? "Fout bij uploaden van video");
+        }
+      } finally {
+        // Altijd terugzetten, anders blijft opslaan geblokkeerd.
+        zetBezig(false);
+        if (videoInputRef.current) {
+          videoInputRef.current.value = "";
+        }
       }
     },
     [editor, articleId, zetBezig]
