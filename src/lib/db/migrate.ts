@@ -61,9 +61,9 @@ async function weigerSupabaseDatabase(db: Kysely<any>, dialect: Dialect) {
 }
 
 /**
- * Voert alle nog niet uitgevoerde migraties uit, in volgorde, op één vaste
- * verbinding met een lock, zodat twee processen nooit tegelijk migreren.
- * Geeft de namen terug van de migraties die nu zijn uitgevoerd.
+ * Voert alle nog niet uitgevoerde migraties uit, in volgorde, met een lock,
+ * zodat twee processen nooit tegelijk migreren. Geeft de namen terug van de
+ * migraties die nu zijn uitgevoerd.
  */
 export async function migreer(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -72,21 +72,60 @@ export async function migreer(
   migraties: Migratie[],
   log: (bericht: string) => void = console.log
 ): Promise<string[]> {
+  await weigerSupabaseDatabase(db, dialect);
+  return dialect === "postgres"
+    ? migreerPostgres(db, migraties, log)
+    : migreerMssql(db, migraties, log);
+}
+
+/**
+ * Postgres: alles in één transactie met een transactie-lock
+ * (pg_advisory_xact_lock). Dat werkt ook achter een pooler in transactiemodus
+ * (Neon, Supabase-pooler), waar een sessie-lock niet betrouwbaar is. DDL is
+ * in Postgres transactioneel: mislukt één migratie, dan wordt niets bewaard.
+ */
+async function migreerPostgres(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: Kysely<any>,
+  migraties: Migratie[],
+  log: (bericht: string) => void
+): Promise<string[]> {
+  const uitgevoerd: string[] = [];
+  await db.transaction().execute(async (trx) => {
+    await sql`SELECT pg_advisory_xact_lock(hashtext(${TABEL}))`.execute(trx);
+    await zorgVoorTabel(trx, "postgres");
+
+    const rijen = await trx.selectFrom(TABEL).select("naam").execute();
+    const gedaan = new Set(rijen.map((r: { naam: string }) => r.naam));
+
+    for (const migratie of migraties) {
+      if (gedaan.has(migratie.naam)) continue;
+      log(`Migratie ${migratie.naam} …`);
+      await migratie.up(trx);
+      await trx.insertInto(TABEL).values({ naam: migratie.naam }).execute();
+      uitgevoerd.push(migratie.naam);
+    }
+  });
+  return uitgevoerd;
+}
+
+/** SQL Server: per migratie, met een sessie-lock op één vaste verbinding. */
+async function migreerMssql(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: Kysely<any>,
+  migraties: Migratie[],
+  log: (bericht: string) => void
+): Promise<string[]> {
+  const dialect: Dialect = "mssql";
   const uitgevoerd: string[] = [];
 
-  await weigerSupabaseDatabase(db, dialect);
-
   await db.connection().execute(async (conn) => {
-    if (dialect === "postgres") {
-      await sql`SELECT pg_advisory_lock(hashtext(${TABEL}))`.execute(conn);
-    } else {
-      await sql`
-        DECLARE @r INT;
-        EXEC @r = sp_getapplock @Resource = ${TABEL}, @LockMode = 'Exclusive',
-          @LockOwner = 'Session', @LockTimeout = 60000;
-        IF @r < 0 THROW 50000, 'Kon de migratielock niet krijgen', 1;
-      `.execute(conn);
-    }
+    await sql`
+      DECLARE @r INT;
+      EXEC @r = sp_getapplock @Resource = ${TABEL}, @LockMode = 'Exclusive',
+        @LockOwner = 'Session', @LockTimeout = 60000;
+      IF @r < 0 THROW 50000, 'Kon de migratielock niet krijgen', 1;
+    `.execute(conn);
 
     try {
       await zorgVoorTabel(conn, dialect);
@@ -110,11 +149,7 @@ export async function migreer(
         uitgevoerd.push(migratie.naam);
       }
     } finally {
-      if (dialect === "postgres") {
-        await sql`SELECT pg_advisory_unlock(hashtext(${TABEL}))`.execute(conn);
-      } else {
-        await sql`EXEC sp_releaseapplock @Resource = ${TABEL}, @LockOwner = 'Session'`.execute(conn);
-      }
+      await sql`EXEC sp_releaseapplock @Resource = ${TABEL}, @LockOwner = 'Session'`.execute(conn);
     }
   });
 
