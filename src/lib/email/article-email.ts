@@ -4,6 +4,7 @@ import "server-only";
 import { generateHTML } from "@tiptap/html/server";
 import { imageSize } from "image-size";
 import { serverExtensions } from "@/components/editor/extensions/server";
+import { metSlotBreak } from "@/lib/artikel-html";
 import { APP_NAME } from "@/lib/constants";
 import { getStorage } from "@/lib/storage";
 import type { ArticleWithRelations } from "@/types";
@@ -39,7 +40,7 @@ export async function buildArticleEmail(params: {
   let contentHtml = "";
   if (Object.keys(article.content).length > 0) {
     contentHtml = generateHTML(
-      article.content as Parameters<typeof generateHTML>[0],
+      metSlotBreak(article.content as Parameters<typeof generateHTML>[0]),
       serverExtensions
     );
   } else if (article.content_text) {

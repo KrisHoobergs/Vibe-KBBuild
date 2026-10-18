@@ -51,6 +51,15 @@ export function ArticleForm({ article, allTags }: ArticleFormProps) {
     article?.tags.map((t) => t.id) ?? []
   );
   const [saving, setSaving] = useState(false);
+  // Loopt er een upload in de editor? Dan nog niet opslaan, anders gaat een
+  // geplakte afbeelding als base64 mee of ontbreekt ze. De ref is meteen
+  // bijgewerkt (ook voor Ctrl+S vlak na het plakken), de state voor de knoppen.
+  const uploadsBezig = useRef(false);
+  const [uploading, setUploading] = useState(false);
+  const handleUploadingChange = useCallback((bezig: boolean) => {
+    uploadsBezig.current = bezig;
+    setUploading(bezig);
+  }, []);
   const [contentDirty, setContentDirty] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
 
@@ -76,6 +85,10 @@ export function ArticleForm({ article, allTags }: ArticleFormProps) {
 
   async function handleSave() {
     if (saving) return;
+    if (uploadsBezig.current) {
+      toast.error("Wacht tot de afbeeldingen geüpload zijn");
+      return;
+    }
 
     if (!title.trim()) {
       toast.error("Titel is verplicht");
@@ -168,7 +181,7 @@ export function ArticleForm({ article, allTags }: ArticleFormProps) {
               size="sm"
               className={topbarPrimaryButtonClass}
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || uploading}
             >
               <Save className="h-4 w-4" />
               {saveLabel}
@@ -225,6 +238,7 @@ export function ArticleForm({ article, allTags }: ArticleFormProps) {
             content={contentJson}
             onChange={handleEditorChange}
             articleId={article?.id}
+            onUploadingChange={handleUploadingChange}
           />
         </div>
       </div>
@@ -232,7 +246,7 @@ export function ArticleForm({ article, allTags }: ArticleFormProps) {
       {/* Mobiel: geen plek in de topbar, dus de knoppen plakken onderaan het
           scherm. -bottom-4/-mb-4/-mx-4 heffen main's p-4 op. */}
       <div className="sticky -bottom-4 z-10 -mx-4 -mb-4 flex gap-2 border-t bg-background px-4 py-3 md:hidden">
-        <Button onClick={handleSave} disabled={saving}>
+        <Button onClick={handleSave} disabled={saving || uploading}>
           {saveLabel}
         </Button>
         <Button variant="outline" onClick={handleCancel}>

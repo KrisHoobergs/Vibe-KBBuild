@@ -1,7 +1,8 @@
 import { Skeleton } from "@/components/ui/skeleton";
 
-// Laadscherm voor het bewerken (anders zou het artikelskelet van de map
-// erboven verschijnen). Volgt de opbouw van het artikelformulier.
+// Laadscherm voor het bewerken: de editor heeft veel code nodig, dus hier
+// helpt een skelet. Volgt de opbouw van het artikelformulier. (De
+// artikelpagina zelf heeft bewust geen laadscherm, zie row-link-indicator.tsx.)
 export default function BewerkenLaden() {
   return (
     <div className="mx-auto max-w-3xl space-y-6" aria-busy="true" aria-label="Artikel laden">

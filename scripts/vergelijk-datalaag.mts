@@ -218,6 +218,13 @@ async function main() {
   const termen = ["artikel", "artikelen", "de", "test", "installatie", '"exacte zin"', "-test", "a or b", "c#", "node.js"];
   const volgorde = (a: Record<string, unknown>, b: Record<string, unknown>) =>
     Number(b.rank) - Number(a.rank) || String(a.id).localeCompare(String(b.id));
+  // updated_at komt niet uit de zoekfunctie zelf: de nieuwe code haalt het met
+  // een join uit articles. Voor de oude rijen hier dus ook uit articles.
+  const { data: wijzigingen, error: wijzigFout } = await supabase.from("articles").select("id, updated_at");
+  if (wijzigFout) throw wijzigFout;
+  const gewijzigd = new Map(
+    ((wijzigingen ?? []) as { id: string; updated_at: string }[]).map((a) => [a.id, a.updated_at])
+  );
   for (const query of termen) {
     for (const statuses of [["published"], ["draft", "in_review", "published"]]) {
       for (const tagSlugs of [null, slugs.slice(0, 1)]) {
@@ -233,12 +240,13 @@ async function main() {
         const norm = (r: Record<string, unknown>) => ({
           ...r,
           published_at: iso(r.published_at),
+          updated_at: iso(r.updated_at),
           rank: Math.round(Number(r.rank) * 1e5) / 1e5,
           tags: r.tags ? tagsSorted(r.tags as TagLike[]) : null,
         });
         vergelijk(
           `zoeken ${JSON.stringify({ query, statuses, tagSlugs })}`,
-          (oud as Record<string, unknown>[]).map(norm).sort(volgorde),
+          (oud as Record<string, unknown>[]).map((r) => norm({ ...r, updated_at: gewijzigd.get(String(r.id)) })).sort(volgorde),
           nieuw.map((r) => norm(r as unknown as Record<string, unknown>)).sort(volgorde)
         );
       }

@@ -1,9 +1,11 @@
 import { notFound } from "next/navigation";
+import type { JSONContent } from "@tiptap/core";
 import { generateHTML } from "@tiptap/html/server";
 import { getArticleBySlug } from "@/actions/articles";
 import { getMailSettingsStatus } from "@/actions/mail";
 import { ArticleHeader } from "@/components/articles/article-header";
 import { leesExtensions } from "@/components/editor/extensions/server";
+import { metAfbeeldingUrls, metSlotBreak } from "@/lib/artikel-html";
 import { estimateReadingTime } from "@/lib/utils";
 
 interface Props {
@@ -24,11 +26,17 @@ export default async function ArticlePage({ params }: Props) {
   const readingTime = estimateReadingTime(article.content_text);
 
   // De inhoud wordt hier al HTML, zodat de browser voor het lezen geen editor
-  // hoeft te laden. Lukt dat niet (onverwachte inhoud), dan de platte tekst.
+  // hoeft te laden. Base64-afbeeldingen krijgen een eigen adres, zodat ze niet
+  // in de pagina zelf zitten. Lukt het niet (onverwachte inhoud), dan de platte tekst.
   let contentHtml: string | null = null;
   if (Object.keys(article.content).length > 0) {
     try {
-      contentHtml = generateHTML(article.content as Parameters<typeof generateHTML>[0], leesExtensions);
+      const versie = encodeURIComponent(article.updated_at);
+      const doc = metAfbeeldingUrls(
+        metSlotBreak(article.content as JSONContent),
+        (n) => `/api/artikelen/${article.id}/afbeelding/${n}?v=${versie}`
+      );
+      contentHtml = generateHTML(doc, leesExtensions);
     } catch (error) {
       console.error("Artikel naar HTML omzetten mislukt:", error);
     }

@@ -56,7 +56,6 @@ export async function deleteTagById(id: string): Promise<void> {
   await getDb().deleteFrom("tags").where("id", "=", id).execute();
 }
 
-/** Tags per artikel, voor een reeks artikelen in één query. */
 /** De tags van één artikel, op slug: zonder eerst het id van het artikel op te zoeken. */
 export async function tagsForArticleSlug(slug: string): Promise<Tag[]> {
   const rijen = await getDb()
@@ -70,6 +69,7 @@ export async function tagsForArticleSlug(slug: string): Promise<Tag[]> {
   return rijen.map(naarTag);
 }
 
+/** Tags per artikel, voor een reeks artikelen in één query. */
 export async function tagsForArticles(articleIds: string[]): Promise<Map<string, Tag[]>> {
   const perArtikel = new Map<string, Tag[]>();
   if (articleIds.length === 0) return perArtikel;

@@ -15,7 +15,7 @@ const lowlight = createLowlight(common);
  * met editorExtensions in ./index.ts, maar zonder editor-only onderdelen
  * (Placeholder, NodeViews).
  */
-function maakServerExtensions(codeblokStijl?: string) {
+function maakServerExtensions(opties: { codeblokStijl?: string; luieAfbeeldingen?: boolean } = {}) {
   return [
     StarterKit.configure({
       codeBlock: false, // CodeBlockLowlight hieronder
@@ -27,6 +27,8 @@ function maakServerExtensions(codeblokStijl?: string) {
       allowBase64: true,
       HTMLAttributes: {
         class: "rounded-md max-w-full",
+        // Pas laden als je in de buurt scrolt (niet voor afdrukken of mail).
+        ...(opties.luieAfbeeldingen ? { loading: "lazy", decoding: "async" } : {}),
       },
     }),
     Link.configure({
@@ -45,7 +47,7 @@ function maakServerExtensions(codeblokStijl?: string) {
       lowlight,
       HTMLAttributes: {
         class: "rounded-md bg-muted p-4 font-mono text-sm",
-        ...(codeblokStijl ? { style: codeblokStijl } : {}),
+        ...(opties.codeblokStijl ? { style: opties.codeblokStijl } : {}),
       },
     }),
   ];
@@ -55,12 +57,13 @@ function maakServerExtensions(codeblokStijl?: string) {
  * Voor mail en de printweergave: codeblokken krijgen inline styles, zodat ze
  * ook in e-mailclients zonder stylesheet leesbaar zijn.
  */
-export const serverExtensions = maakServerExtensions(
-  "background-color: #f3f4f6; border-radius: 6px; padding: 16px; font-family: ui-monospace, monospace; font-size: 13px; overflow-x: auto;"
-);
+export const serverExtensions = maakServerExtensions({
+  codeblokStijl:
+    "background-color: #f3f4f6; border-radius: 6px; padding: 16px; font-family: ui-monospace, monospace; font-size: 13px; overflow-x: auto;",
+});
 
 /**
  * Voor de leesweergave in de app: zonder inline styles, zodat de kleuren van
  * het thema (licht/donker) gelden.
  */
-export const leesExtensions = maakServerExtensions();
+export const leesExtensions = maakServerExtensions({ luieAfbeeldingen: true });

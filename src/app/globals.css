@@ -145,9 +145,39 @@
 .ProseMirror pre {
   white-space: pre-wrap;
 }
-/* Een lege alinea: in de editor houdt een <br> ze open, in HTML niet. */
-.ProseMirror p:empty::before {
+/* Lege tekstblokken: in de editor houdt een <br> ze open, in HTML niet. */
+.ProseMirror :is(p, h1, h2, h3, h4, h5, h6):empty::before,
+.ProseMirror pre > code:empty::before {
   content: "\200b";
+}
+/* In de editor staat een afbeelding in een inline-block met wat ruimte eronder;
+   in de leesweergave (HTML van de server) hetzelfde. */
+.tiptap.ProseMirror > img {
+  margin-bottom: 0.4375rem;
+}
+
+/* Editor: plek waar een geplakte of gesleepte afbeelding komt, tijdens het uploaden. */
+.afbeelding-upload {
+  display: inline-block;
+  margin: 0.25rem 0;
+  padding: 0.25rem 0.5rem;
+  border: 1px dashed var(--border);
+  border-radius: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+/* Lopend balkje onder een artikelrij tijdens het laden (row-link-indicator.tsx). */
+@keyframes laadbalk {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.laadbalk {
+  animation: laadbalk 1s ease-in-out infinite;
 }
 
 /* Editor heading styling */
