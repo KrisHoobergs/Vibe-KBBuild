@@ -4,7 +4,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { Toolbar } from "./toolbar";
 import { editorExtensions } from "./extensions";
-import { uploadArticleImage, uploadArticleVideo } from "@/actions/upload";
+import { uploadBestand } from "@/lib/storage/client-upload";
 import {
   Dialog,
   DialogContent,
@@ -78,11 +78,7 @@ export function TiptapEditor({
       if (!file || !editor) return;
 
       setUploading(true);
-      const formData = new FormData();
-      formData.set("file", file);
-      formData.set("articleId", articleId ?? "temp");
-
-      const result = await uploadArticleImage(formData);
+      const result = await uploadBestand(file, "afbeelding", articleId ?? "temp");
       if (result.success && result.data) {
         editor.chain().focus().setImage({ src: result.data.url }).run();
       } else {
@@ -140,11 +136,7 @@ export function TiptapEditor({
       if (!file || !editor) return;
 
       setUploading(true);
-      const formData = new FormData();
-      formData.set("file", file);
-      formData.set("articleId", articleId ?? "temp");
-
-      const result = await uploadArticleVideo(formData);
+      const result = await uploadBestand(file, "video", articleId ?? "temp");
       if (result.success && result.data) {
         editor
           .chain()

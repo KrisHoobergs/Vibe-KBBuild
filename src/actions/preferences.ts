@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { getCurrentUser, NIET_INGELOGD } from "@/lib/auth";
+import { updateProfileFields } from "@/lib/db/repositories/profiles";
 import { ITEMS_PER_PAGE, ITEMS_PER_PAGE_OPTIONS } from "@/lib/constants";
 import type { ActionResult, ArticleSort, Theme } from "@/types";
 
@@ -14,24 +15,37 @@ export async function getPreferences(): Promise<{
 }> {
   const fallback = { items_per_page: ITEMS_PER_PAGE, default_sort: "updated_at" as const };
 
-  const supabase = await createClient();
-  const { data: claimsData } = await supabase.auth.getClaims();
-  const userId = claimsData?.claims.sub;
-
-  if (!userId) return fallback;
-
-  const { data } = await supabase
-    .from("profiles")
-    .select("items_per_page, default_sort")
-    .eq("id", userId)
-    .single();
-
-  if (!data) return fallback;
+  const user = await getCurrentUser();
+  if (!user) return fallback;
 
   return {
-    items_per_page: data.items_per_page ?? fallback.items_per_page,
-    default_sort: (data.default_sort as ArticleSort) ?? fallback.default_sort,
+    items_per_page: user.items_per_page ?? fallback.items_per_page,
+    default_sort: user.default_sort ?? fallback.default_sort,
   };
+}
+
+/** Weergavenaam van de ingelogde gebruiker (vroeger rechtstreeks vanuit de browser). */
+export async function updateProfile(data: { display_name: string }): Promise<ActionResult> {
+  const displayName = data.display_name.trim();
+  if (!displayName) {
+    return { success: false, error: "Weergavenaam is verplicht" };
+  }
+  if (displayName.length > 100) {
+    return { success: false, error: "Weergavenaam is te lang (max. 100 tekens)" };
+  }
+
+  const user = await getCurrentUser();
+  if (!user) return NIET_INGELOGD;
+
+  try {
+    await updateProfileFields(user.id, { display_name: displayName });
+  } catch (error) {
+    console.error("Profiel opslaan mislukt:", error);
+    return { success: false, error: "Fout bij opslaan" };
+  }
+
+  revalidatePath("/", "layout");
+  return { success: true };
 }
 
 export async function updatePreferences(data: {
@@ -51,26 +65,18 @@ export async function updatePreferences(data: {
     return { success: false, error: "Ongeldige sortering" };
   }
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCurrentUser();
+  if (!user) return NIET_INGELOGD;
 
-  if (!user) {
-    return { success: false, error: "Niet ingelogd" };
-  }
-
-  const { error } = await supabase
-    .from("profiles")
-    .update({
+  try {
+    await updateProfileFields(user.id, {
       theme: data.theme,
       items_per_page: data.items_per_page,
       default_sort: data.default_sort,
-    })
-    .eq("id", user.id);
-
-  if (error) {
-    return { success: false, error: error.message };
+    });
+  } catch (error) {
+    console.error("Voorkeuren opslaan mislukt:", error);
+    return { success: false, error: "Opslaan mislukt" };
   }
 
   revalidatePath("/profiel");
