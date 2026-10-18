@@ -3,6 +3,7 @@ import { sql } from "kysely";
 import { leesConfig } from "@/lib/config";
 import { maakKysely } from "@/lib/db/connection";
 import { leesOpstartstatus, veiligeFoutmelding } from "@/lib/db/opstartstatus";
+import { isGeldigeMailsleutel } from "@/lib/crypto";
 
 // Gezondheid van deze installatie: klopt de configuratie, is de database
 // bereikbaar, zijn de migraties bij het opstarten gelukt? Gebruikt door
@@ -17,6 +18,8 @@ export type Gezondheid = {
   configuratie: Controle;
   database: Controle | null;
   migraties: { status: "ok" | "fout" | "niet-automatisch"; melding?: string };
+  /** null: geen MAIL_ENCRYPTION_KEY (artikels mailen staat dan uit). */
+  mailsleutel: Controle | null;
 };
 
 export async function controleerGezondheid(): Promise<Gezondheid> {
@@ -47,10 +50,19 @@ export async function controleerGezondheid(): Promise<Gezondheid> {
   const migraties =
     opstart.migraties === "fout"
       ? { status: "fout" as const, melding: opstart.melding }
-      : { status: opstart.migraties };
+      : opstart.migraties === "niet-automatisch"
+        ? { status: opstart.migraties, melding: opstart.reden }
+        : { status: opstart.migraties };
+
+  // Alleen bekijken als de sleutel er is: zonder sleutel kan mailen gewoon niet.
+  const mailsleutel: Controle | null = process.env.MAIL_ENCRYPTION_KEY
+    ? isGeldigeMailsleutel()
+      ? { ok: true }
+      : { ok: false, melding: "MAIL_ENCRYPTION_KEY is geen base64-sleutel van 32 bytes" }
+    : null;
 
   return {
-    gezond: configuratie.ok && !!database?.ok && migraties.status !== "fout",
+    gezond: configuratie.ok && !!database?.ok && migraties.status !== "fout" && mailsleutel?.ok !== false,
     installatie: config && {
       database: config.db.dialect,
       login: config.auth.driver,
@@ -60,5 +72,6 @@ export async function controleerGezondheid(): Promise<Gezondheid> {
     configuratie,
     database,
     migraties,
+    mailsleutel,
   };
 }

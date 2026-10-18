@@ -3,7 +3,7 @@
 // instrumentation en de routes in verschillende bundels zitten.
 
 export type Opstartstatus =
-  | { migraties: "niet-automatisch" }
+  | { migraties: "niet-automatisch"; reden?: string }
   | { migraties: "ok"; uitgevoerd: string[] }
   | { migraties: "fout"; melding: string };
 

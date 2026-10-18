@@ -1,3 +1,4 @@
+import path from "node:path";
 import { z } from "zod";
 
 // Configuratie van deze installatie, uit server-side env-variabelen. Bewust geen
@@ -120,6 +121,13 @@ export function leesConfig(env: Record<string, string | undefined> = process.env
   }
   if (e.STORAGE_DRIVER === "filesystem" && !e.STORAGE_DIR) {
     throw new ConfigFout("STORAGE_DRIVER=filesystem vraagt ook STORAGE_DIR");
+  }
+  if (e.STORAGE_DRIVER === "filesystem" && !path.isAbsolute(e.STORAGE_DIR!)) {
+    // Een relatief pad komt in .next/standalone terecht (de server doet daar
+    // een chdir), en die map wist de volgende build.
+    throw new ConfigFout(
+      "STORAGE_DIR moet een absoluut pad zijn, buiten de map van de code (bv. D:\\kennisbank\\bestanden of /var/lib/kennisbank/bestanden)"
+    );
   }
   if (e.STORAGE_DRIVER === "filesystem" && env.VERCEL) {
     throw new ConfigFout("STORAGE_DRIVER=filesystem werkt niet op Vercel (de schijf is daar tijdelijk)");

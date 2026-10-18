@@ -10,7 +10,7 @@ import {
   getMailSettingsRow,
   upsertMailSettings,
 } from "@/lib/db/repositories/mail-settings";
-import { encryptSecret, decryptSecret } from "@/lib/crypto";
+import { encryptSecret, decryptSecret, isGeldigeMailsleutel } from "@/lib/crypto";
 import { buildArticleEmail } from "@/lib/email/article-email";
 import { getArticleBySlug } from "@/actions/articles";
 import { APP_NAME } from "@/lib/constants";
@@ -217,10 +217,10 @@ async function getCredentials(
 // Ontbrekende sleutel = serverconfiguratie (bv. niet ingesteld in Vercel),
 // niet de schuld van de gebruiker: apart melden in plaats van "opnieuw opslaan".
 const MISSING_KEY_ERROR =
-  "Versturen is op de server nog niet ingesteld (MAIL_ENCRYPTION_KEY ontbreekt). Neem contact op met de beheerder";
+  "Versturen is op de server nog niet goed ingesteld (MAIL_ENCRYPTION_KEY ontbreekt of is geen sleutel van 32 bytes). Neem contact op met de beheerder";
 
 function hasEncryptionKey(): boolean {
-  return !!process.env.MAIL_ENCRYPTION_KEY;
+  return isGeldigeMailsleutel();
 }
 
 function createTransport(user: string, pass: string) {

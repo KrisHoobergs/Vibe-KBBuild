@@ -7,6 +7,12 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 const VERSION = "v1";
 
+/** Is MAIL_ENCRYPTION_KEY gezet én een base64-sleutel van precies 32 bytes? */
+export function isGeldigeMailsleutel(): boolean {
+  const raw = process.env.MAIL_ENCRYPTION_KEY;
+  return !!raw && Buffer.from(raw, "base64").length === 32;
+}
+
 function getKey(): Buffer {
   const raw = process.env.MAIL_ENCRYPTION_KEY;
   if (!raw) {
