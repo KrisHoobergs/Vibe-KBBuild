@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Menu, FileText, Tags, Settings, Users } from "lucide-react";
+import { Menu, FileText, Tags, Settings, Users, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,7 @@ const navItems = [
 const adminItems = [
   { href: "/beheer", label: "Beheer", icon: Settings },
   { href: "/beheer/gebruikers", label: "Gebruikers", icon: Users },
+  { href: "/status", label: "Systeemstatus", icon: Activity },
 ];
 
 export function MobileNav({ user, className }: MobileNavProps) {

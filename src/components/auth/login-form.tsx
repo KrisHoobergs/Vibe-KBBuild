@@ -69,6 +69,9 @@ export function LoginForm({ melding }: { melding?: string }) {
         <Link href="/wachtwoord-vergeten" className="hover:text-foreground transition-colors">
           Wachtwoord vergeten?
         </Link>
+        <Link href="/status" className="text-xs hover:text-foreground transition-colors">
+          Systeemstatus
+        </Link>
       </CardFooter>
     </Card>
   );

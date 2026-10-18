@@ -8,6 +8,7 @@ import {
   Tags,
   Settings,
   Users,
+  Activity,
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
@@ -34,6 +35,7 @@ const navItems = [
 const adminItems = [
   { href: "/beheer", label: "Beheer", icon: Settings },
   { href: "/beheer/gebruikers", label: "Gebruikers", icon: Users },
+  { href: "/status", label: "Systeemstatus", icon: Activity },
 ];
 
 export function Sidebar({ user, collapsed, onToggle }: SidebarProps) {
