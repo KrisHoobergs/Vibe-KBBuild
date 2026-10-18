@@ -15,7 +15,7 @@ const pgTypes = {
   },
 };
 
-export function maakPostgresPool(config: DbConfig) {
+export function maakPostgresPool(config: DbConfig, opties: { verbindingsTimeoutMs?: number } = {}) {
   return new pg.Pool({
     connectionString: config.url,
     ssl: config.ssl,
@@ -23,13 +23,18 @@ export function maakPostgresPool(config: DbConfig) {
     // Kort houden: serverless functies blijven niet lang leven, en de
     // Supabase-pooler heeft een beperkt aantal verbindingen.
     idleTimeoutMillis: 5_000,
-    connectionTimeoutMillis: 10_000,
+    // Ruim genoeg voor een database die eerst moet ontwaken (bv. Neon na
+    // een paar minuten zonder gebruik).
+    connectionTimeoutMillis: opties.verbindingsTimeoutMs ?? 15_000,
     types: pgTypes,
     application_name: "kbbuild",
   });
 }
 
-export function maakKysely(config: DbConfig): { db: Kysely<Database>; pool: pg.Pool } {
-  const pool = maakPostgresPool(config);
+export function maakKysely(
+  config: DbConfig,
+  opties: { verbindingsTimeoutMs?: number } = {}
+): { db: Kysely<Database>; pool: pg.Pool } {
+  const pool = maakPostgresPool(config, opties);
   return { db: new Kysely<Database>({ dialect: new PostgresDialect({ pool }) }), pool };
 }
