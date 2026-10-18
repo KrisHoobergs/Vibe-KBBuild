@@ -1,7 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { Fragment, Slice } from "@tiptap/pm/model";
-import { Plugin, PluginKey, type EditorState, type Transaction } from "@tiptap/pm/state";
-import { dropPoint } from "@tiptap/pm/transform";
+import { Plugin, PluginKey, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { dropPoint, insertPoint } from "@tiptap/pm/transform";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { toast } from "sonner";
 import { ACCEPTED_IMAGE_TYPES } from "@/lib/constants";
@@ -49,8 +49,8 @@ async function dataUriNaarBestand(uri: string): Promise<File | null> {
 // blijft altijd bestaan, ook als de tekst ernaast gewist of overtypt wordt.
 // Zo komt de afbeelding waar ze geplakt of neergezet werd, ook als je intussen
 // verder typt of ergens anders klikt.
-type Plekken = Map<object, number>;
-type Actie = { voegToe?: { id: object; pos: number }; haalWeg?: object };
+type Plekken = Map<object, { pos: number; assoc: number }>;
+type Actie = { voegToe?: { id: object; pos: number; assoc?: number }; haalWeg?: object };
 type PluginState = { plekken: Plekken };
 
 function plaatshouder() {
@@ -86,7 +86,7 @@ export const GeplakteAfbeeldingen = Extension.create<GeplakteAfbeeldingenOpties>
     // wordt ze meteen weer vervangen.
     const geupload = new Map<string, string>();
 
-    const plekVan = (state: EditorState, id: object) => sleutel.getState(state)?.plekken.get(id) ?? null;
+    const plekVan = (state: EditorState, id: object) => sleutel.getState(state)?.plekken.get(id)?.pos ?? null;
 
     /** Vervangt bekende data:-URI's in het document door hun URL. */
     function vervangBekende(state: EditorState): Transaction | null {
@@ -107,6 +107,10 @@ export const GeplakteAfbeeldingen = Extension.create<GeplakteAfbeeldingenOpties>
       if (pos === null) {
         tr.deleteSelection();
         pos = tr.selection.from;
+        // Aan het begin of einde van een alinea: meteen de plek tussen de blokken.
+        if (tr.doc.resolve(pos).parent.content.size) {
+          pos = insertPoint(tr.doc, pos, view.state.schema.nodes.image) ?? pos;
+        }
       } else {
         const voorbeeld = view.state.schema.nodes.image.create({ src: "" });
         pos = dropPoint(tr.doc, pos, new Slice(Fragment.from(voorbeeld), 0, 0)) ?? pos;
@@ -134,7 +138,29 @@ export const GeplakteAfbeeldingen = Extension.create<GeplakteAfbeeldingenOpties>
           // wat echt ingevoegd werd, zodat de volgende afbeelding erachter komt.
           let na = invoeg.mapping.map(p, 1);
           invoeg.mapping.maps.at(-1)?.forEach((_a, _b, _c, eind) => (na = eind));
-          view.dispatch(invoeg.scrollIntoView().setMeta(sleutel, { voegToe: { id, pos: na } } satisfies Actie));
+          // Stond de cursor nog op de plakplek, dan komt hij achter de
+          // afbeelding (zoals bij gewoon plakken), zodat verder typen of nog
+          // eens plakken eronder komt en niet erboven.
+          const sel = view.state.selection;
+          const $s = sel.$from;
+          const cursorBijPlek =
+            sel.empty &&
+            (sel.from === p ||
+              ($s.parent.isTextblock && $s.parentOffset === $s.parent.content.size && $s.after() === p));
+          if (cursorBijPlek) {
+            const $na = invoeg.doc.resolve(na);
+            if ($na.parent.inlineContent) {
+              invoeg.setSelection(TextSelection.create(invoeg.doc, na));
+            } else {
+              if (!$na.nodeAfter?.isTextblock) invoeg.insert(na, view.state.schema.nodes.paragraph.create());
+              invoeg.setSelection(TextSelection.create(invoeg.doc, na + 1));
+            }
+          }
+          // assoc -1: de plek blijft direct achter de afbeelding, ook als er
+          // daarna een lege alinea bijkomt (TrailingNode of hierboven).
+          view.dispatch(
+            invoeg.scrollIntoView().setMeta(sleutel, { voegToe: { id, pos: na, assoc: -1 } } satisfies Actie)
+          );
         }
       } finally {
         o.zetBezig(false);
@@ -200,9 +226,13 @@ export const GeplakteAfbeeldingen = Extension.create<GeplakteAfbeeldingenOpties>
             const actie = tr.getMeta(sleutel) as Actie | undefined;
             if (!tr.docChanged && !actie) return oud;
             const plekken: Plekken = new Map();
-            for (const [id, pos] of oud.plekken) plekken.set(id, tr.mapping.map(pos, 1));
+            for (const [id, plek] of oud.plekken) {
+              plekken.set(id, { pos: tr.mapping.map(plek.pos, plek.assoc), assoc: plek.assoc });
+            }
             if (actie?.haalWeg) plekken.delete(actie.haalWeg);
-            if (actie?.voegToe) plekken.set(actie.voegToe.id, actie.voegToe.pos);
+            if (actie?.voegToe) {
+              plekken.set(actie.voegToe.id, { pos: actie.voegToe.pos, assoc: actie.voegToe.assoc ?? 1 });
+            }
             return { plekken };
           },
         },
@@ -217,7 +247,7 @@ export const GeplakteAfbeeldingen = Extension.create<GeplakteAfbeeldingenOpties>
             if (!plekken?.size) return null;
             return DecorationSet.create(
               state.doc,
-              [...plekken].map(([id, pos]) => Decoration.widget(pos, plaatshouder, { id }))
+              [...plekken].map(([id, plek]) => Decoration.widget(plek.pos, plaatshouder, { id }))
             );
           },
 
