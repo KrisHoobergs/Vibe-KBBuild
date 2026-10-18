@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-"Knowledge Build" / "Know-How Space": a team knowledge base. Next.js 16 (App Router, React 19), Supabase (Postgres, Auth, Storage), Kysely (data layer), Tiptap v3, shadcn/ui (new-york), Tailwind CSS v4. All UI text, route segments (`artikelen`, `bewerken`, `beheer`, `inloggen`, ...) and most code comments are in **Dutch**. Keep new UI strings and comments in Dutch.
+"Knowledge Build" / "Know-How Space": a team knowledge base. Next.js 16.4 (App Router, React 19), Supabase (Postgres, Auth, Storage), Kysely (data layer), Tiptap v3, shadcn/ui (new-york), Tailwind CSS v4. All UI text, route segments (`artikelen`, `bewerken`, `beheer`, `inloggen`, ...) and most code comments are in **Dutch**. Keep new UI strings and comments in Dutch.
 
-The app is being made **database-independent**: one backend per installation (Supabase, plain PostgreSQL, SQL Server), chosen with server-side env vars, each installation on its own URL. Done: phase 1 (Kysely data layer, live on the Supabase install) and phase 2 (own login with Better Auth, plain PostgreSQL, file storage in the database or a folder, admin reset links). Still to do: SQL Server (phase 3) and self-hosting/Docker (phase 4). Plan: `C:\Users\krish\.claude\plans\je-weet-nu-dat-reactive-mochi.md`.
+The app is being made **database-independent**: one backend per installation (Supabase, plain PostgreSQL, SQL Server), chosen with server-side env vars, each installation on its own URL. Done: phase 1 (Kysely data layer, live on the Supabase install), phase 2 (own login with Better Auth, plain PostgreSQL, file storage in the database or a folder, admin reset links) and phase 4 (self-hosting: standalone build, Docker, docs). Still to do: SQL Server (phase 3). **How to set up a new installation (Vercel + Neon, Docker, Windows service): `docs/installatie.md`** — keep it up to date when setup steps or env vars change. Plan: `C:\Users\krish\.claude\plans\je-weet-nu-dat-reactive-mochi.md`.
 
 ## Commands
 
@@ -25,6 +25,8 @@ npm run db:test                      # all repository write paths against the lo
 npm run db:migrate                   # migrations for a NON-Supabase install (refuses Supabase)
 npm run test:opslag                  # folder storage, upload tickets, own-URL parsing (no DB needed)
 ```
+
+Self-hosting: `BUILD_STANDALONE=1 npm run build` produces `.next/standalone` (`next.config.ts`; Vercel builds without it). `Dockerfile` (node:24-slim, multi-stage, runs as `node`, healthcheck on `/api/gezondheid`) + `docker-compose.yml` (app + postgres:17 with ICU nl-NL) + `.env.docker.example`. The GitHub Actions workflow `.github/workflows/docker.yml` builds the image and smoke-tests it with Postgres on pull requests and relevant pushes to `main` (Docker isn't installed on Kris's PC). Packages that Turbopack doesn't bundle must end up in `.next/standalone/node_modules` (today only `pg`); filesystem calls on runtime paths need `/* turbopackIgnore: true */`.
 
 `next build` does not run ESLint in Next 16, so lint errors don't block a deploy. Run `npm run lint` on its own. There is no UI test suite; `db:test` covers the data layer and only accepts a local database. UI flows of an own-login install can be tested with Playwright MCP against a local second database (see "Testing an own-login install").
 

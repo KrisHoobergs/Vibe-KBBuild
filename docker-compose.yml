@@ -1,0 +1,55 @@
+# Kennisbank zelf hosten: de app + PostgreSQL op één server.
+#
+#   1. cp .env.docker.example .env      en vul de waarden in
+#   2. docker compose up -d --build
+#   3. open SITE_URL, ga naar /registreren: de eerste gebruiker wordt beheerder
+#
+# Zie docs/installatie.md voor de volledige uitleg (reverse proxy, back-ups,
+# bijwerken).
+
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: kennisbank
+      POSTGRES_USER: kennisbank
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?zet POSTGRES_PASSWORD in .env}
+      # Nederlandse sortering (ICU nl-NL) en een echte tekenset voor het zoeken.
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale-provider=icu --icu-locale=nl-NL --locale=C.UTF-8"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kennisbank -d kennisbank"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    image: kennisbank:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${POORT:-3000}:3000"
+    environment:
+      DB_DIALECT: postgres
+      DATABASE_URL: postgres://kennisbank:${POSTGRES_PASSWORD}@db:5432/kennisbank
+      # Verkeer tussen app en database blijft binnen Docker: geen TLS nodig.
+      DATABASE_SSL: "off"
+      AUTH_DRIVER: local
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-filesystem}
+      STORAGE_DIR: /data/bestanden
+      REGISTRATIE: ${REGISTRATIE:-uitnodiging}
+      DB_AUTO_MIGRATE: "true"
+      SITE_URL: ${SITE_URL:?zet SITE_URL in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?zet BETTER_AUTH_SECRET in .env}
+      MAIL_ENCRYPTION_KEY: ${MAIL_ENCRYPTION_KEY:?zet MAIL_ENCRYPTION_KEY in .env}
+    volumes:
+      - bestanden:/data/bestanden
+
+volumes:
+  db-data:
+  bestanden:
