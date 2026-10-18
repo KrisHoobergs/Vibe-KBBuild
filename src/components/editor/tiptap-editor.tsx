@@ -5,6 +5,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import { Toolbar } from "./toolbar";
 import { editorExtensions } from "./extensions";
 import { uploadBestand } from "@/lib/storage/client-upload";
+import { geplakteAfbeeldingen } from "./geplakte-afbeeldingen";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +50,7 @@ export function TiptapEditor({
         class:
           "prose prose-neutral dark:prose-invert max-w-none min-h-[400px] rounded-b-md border p-4 focus:outline-none",
       },
+      ...geplakteAfbeeldingen({ articleId: articleId ?? "temp", zetBezig: setUploading }),
     },
   });
 

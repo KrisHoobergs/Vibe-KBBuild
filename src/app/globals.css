@@ -133,6 +133,23 @@
   }
 }
 
+/* Basisregels die Tiptap zelf toevoegt zodra er een editor is. Hier ook, voor
+   artikelinhoud die als HTML van de server komt (leesweergave, afdrukken). */
+.ProseMirror {
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  white-space: break-spaces;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
+}
+.ProseMirror pre {
+  white-space: pre-wrap;
+}
+/* Een lege alinea: in de editor houdt een <br> ze open, in HTML niet. */
+.ProseMirror p:empty::before {
+  content: "\200b";
+}
+
 /* Editor heading styling */
 .ProseMirror h1 {
   font-size: 2em;

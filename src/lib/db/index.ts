@@ -13,9 +13,12 @@ const globaal = globalThis as unknown as { __kbDb?: Kysely<Database> };
 
 export function getDb(): Kysely<Database> {
   if (!globaal.__kbDb) {
-    const { db, pool } = maakKysely(getConfig().db);
-    // Op Vercel (Fluid compute) sluit dit ongebruikte verbindingen netjes af
-    // voordat een functie-instantie wordt bevroren.
+    // Verbindingen een minuut openhouden: wie een artikel leest en daarna
+    // klikt, hergebruikt ze in plaats van een nieuwe op te zetten (TLS en
+    // aanmelden bij de pooler). Op Vercel (Fluid compute) sluit
+    // attachDatabasePool ongebruikte verbindingen netjes af voordat een
+    // functie-instantie wordt bevroren.
+    const { db, pool } = maakKysely(getConfig().db, { idleTimeoutMs: 60_000 });
     if (process.env.VERCEL) attachDatabasePool(pool);
     globaal.__kbDb = db;
   }

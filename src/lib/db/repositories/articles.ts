@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db";
 import { isUniqueViolation, parseJson, toIso } from "@/lib/db/dialect";
 import type { ArticlesTable, Database } from "@/lib/db/schema";
 import { naarProfile } from "@/lib/db/repositories/profiles";
-import { tagsForArticles } from "@/lib/db/repositories/tags";
+import { tagsForArticles, tagsForArticleSlug } from "@/lib/db/repositories/tags";
 import { slugify } from "@/lib/utils";
 import type {
   Article,
@@ -160,16 +160,10 @@ export async function listArticles(params: {
 
 export async function getArticleWithRelations(slug: string): Promise<ArticleWithRelations | null> {
   const db = getDb();
-  const rij = await db
-    .selectFrom("articles")
-    .select(ARTIKEL_KOLOMMEN)
-    .where("articles.slug", "=", slug)
-    .executeTakeFirst();
-  if (!rij) return null;
-
-  const article = naarArticle(rij);
-  const profielIds = [article.author_id, article.reviewer_id].filter((id): id is string => !!id);
-  const [profielen, tags] = await Promise.all([
+  // Artikel, auteur/reviewer en tags tegelijk, alle drie op slug: één
+  // wachtronde naar de database in plaats van twee na elkaar.
+  const [rij, profielen, tags] = await Promise.all([
+    db.selectFrom("articles").select(ARTIKEL_KOLOMMEN).where("articles.slug", "=", slug).executeTakeFirst(),
     db
       .selectFrom("profiles")
       .select([
@@ -184,11 +178,18 @@ export async function getArticleWithRelations(slug: string): Promise<ArticleWith
         "created_at",
         "updated_at",
       ])
-      .where("id", "in", profielIds)
+      .where((eb) =>
+        eb.or([
+          eb("id", "in", eb.selectFrom("articles").select("articles.author_id").where("articles.slug", "=", slug)),
+          eb("id", "in", eb.selectFrom("articles").select("articles.reviewer_id").where("articles.slug", "=", slug)),
+        ])
+      )
       .execute(),
-    tagsForArticles([article.id]),
+    tagsForArticleSlug(slug),
   ]);
+  if (!rij) return null;
 
+  const article = naarArticle(rij);
   const perId = new Map(profielen.map((p) => [p.id, naarProfile(p)]));
   const author = perId.get(article.author_id);
   if (!author) return null;
@@ -197,7 +198,7 @@ export async function getArticleWithRelations(slug: string): Promise<ArticleWith
     ...article,
     author,
     reviewer: article.reviewer_id ? (perId.get(article.reviewer_id) ?? null) : null,
-    tags: tags.get(article.id) ?? [],
+    tags,
   };
 }
 

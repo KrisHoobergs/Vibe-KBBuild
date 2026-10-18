@@ -84,7 +84,7 @@ export async function ArticleListLoader({
       is_pinned: false,
       pin_order: 0,
       created_at: "",
-      updated_at: "",
+      updated_at: r.updated_at,
     }));
     resultCount = articles.length;
   } else {
