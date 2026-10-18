@@ -75,10 +75,16 @@ export default async function StatusPage() {
               : { ok: g.migraties.status === "ok", melding: g.migraties.melding }
           }
           uitleg={
-            g.installatie?.login === "supabase"
+            g.migraties.melding ??
+            (g.installatie?.login === "supabase"
               ? "Handmatig beheerd (Supabase)"
-              : "Niet automatisch (npm run db:migrate)"
+              : "Niet automatisch (npm run db:migrate)")
           }
+        />
+        <Regel
+          titel="Sleutel voor het mailen"
+          controle={g.mailsleutel ?? "overgeslagen"}
+          uitleg="Niet ingesteld: artikels mailen staat uit"
         />
         {g.installatie && (
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 pt-2 text-xs text-muted-foreground">

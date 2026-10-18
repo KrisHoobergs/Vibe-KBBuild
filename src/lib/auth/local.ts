@@ -16,8 +16,11 @@ import type { AuthDriver } from "./types";
 // - IP over alle accounts: 30 (één bron die wachtwoorden uitprobeert);
 // - e-mailadres over alle IP's: 50 (verspreide aanval op één account).
 // Zo kan iemand een ander niet met 5 pogingen buitensluiten. Het IP komt uit
-// x-forwarded-for / x-real-ip: zet een zelf gehoste installatie dus achter
-// een reverse proxy die die headers zet (Vercel doet dat zelf).
+// x-forwarded-for (zie clientIp). Dat is alleen betrouwbaar als een proxy die
+// header zet (Vercel, Caddy, de nginx- en IIS-voorbeelden in de handleiding):
+// Next.js vult hem alleen met het adres van de verbinding als de client hem
+// níet meestuurt. Is poort 3000 rechtstreeks bereikbaar, dan kan een client
+// zelf een IP kiezen en helpt alleen de limiet per e-mailadres.
 const VENSTER_MS = 15 * 60 * 1000;
 const LIMIET = { ipEmail: 5, ip: 30, email: 50 };
 const MAX_SLEUTELS = 10_000;
@@ -52,9 +55,18 @@ function registreerMislukt(sleutel: string) {
   }
 }
 
+/**
+ * Het IP van de client: het **laatste** item van x-forwarded-for. Dat voegde
+ * de dichtstbijzijnde proxy toe (nginx, IIS); eerdere items stuurt de client
+ * zelf mee en zijn dus vrij te kiezen. Vercel en Caddy zetten er maar één.
+ */
 async function clientIp(): Promise<string> {
   const h = await headers();
-  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip")?.trim() || "onbekend";
+  const laatste = h.get("x-forwarded-for")?.split(",").map((s) => s.trim()).filter(Boolean).at(-1);
+  const ip = laatste || h.get("x-real-ip")?.trim();
+  if (!ip) return "onbekend";
+  // IIS zet er standaard de poort van de client achter ("1.2.3.4:51234", "[::1]:51234").
+  return ip.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/)?.[1] ?? ip.match(/^\[([^\]]+)\](?::\d+)?$/)?.[1] ?? ip;
 }
 
 const FOUTEN_REGISTRATIE: Record<string, string> = {

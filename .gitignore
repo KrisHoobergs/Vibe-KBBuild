@@ -33,6 +33,7 @@ yarn-error.log*
 # env files
 .env*
 !.env.example
+!.env.docker.example
 
 # lokale testdatabase (scripts/lokale-db.mts)
 /.lokale-db/
@@ -50,3 +51,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# back-ups (docs/installatie.md)
+*.dump
+*.tgz

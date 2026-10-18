@@ -1,0 +1,18 @@
+# Niet mee in het Docker-image (sneller bouwen, geen geheimen of lokale data).
+.git
+.github
+node_modules
+.next
+.env*
+!.env.example
+.lokale-db
+.playwright-mcp
+scripts/.tmp
+.claude
+.vercel
+*.tsbuildinfo
+Dockerfile
+docker-compose.yml
+# Back-ups uit docs/installatie.md (dump en bestandenarchief).
+*.dump
+*.tgz

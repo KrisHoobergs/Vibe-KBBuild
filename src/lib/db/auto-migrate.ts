@@ -11,14 +11,27 @@ import { postgresMigraties } from "./migrations/postgres";
 const POGINGEN = 3;
 const WACHTTIJDEN_MS = [2_000, 5_000];
 
-/** Fouten waarbij opnieuw proberen zin heeft: de database is (nog) niet bereikbaar. */
-function isVerbindingsfout(error: unknown): boolean {
+/**
+ * Fouten waarbij opnieuw proberen zin heeft: de database is (nog) niet
+ * bereikbaar. ENOTFOUND hoort erbij: na een herstart van Docker kan de app
+ * starten voor de databasecontainer zijn netwerknaam heeft.
+ */
+export function isVerbindingsfout(error: unknown): boolean {
   const e = error as { code?: unknown; message?: unknown };
   const code = typeof e?.code === "string" ? e.code : "";
   const tekst = typeof e?.message === "string" ? e.message : "";
   return (
-    ["ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EAI_AGAIN", "57P01", "57P03"].includes(code) ||
-    /timeout|terminated|ECONNRESET/i.test(tekst)
+    [
+      "ECONNRESET",
+      "ECONNREFUSED",
+      "ETIMEDOUT",
+      "EAI_AGAIN",
+      "ENOTFOUND",
+      "EHOSTUNREACH",
+      "ENETUNREACH",
+      "57P01",
+      "57P03",
+    ].includes(code) || /timeout|terminated|ECONNRESET/i.test(tekst)
   );
 }
 

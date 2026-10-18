@@ -40,14 +40,18 @@ export const filesystemStorage: StorageDriver = {
   async put(bucket, pad, data) {
     const doel = bestandsPad(bucket, pad);
     if (!doel) throw new Error("Ongeldig pad");
-    await mkdir(path.dirname(doel), { recursive: true });
+    // turbopackIgnore bij elke bestandsaanroep: de paden komen uit STORAGE_DIR
+    // (buiten het project), de build hoeft er niets van mee te nemen.
+    await mkdir(/* turbopackIgnore: true */ path.dirname(doel), { recursive: true });
     // Exclusief aanmaken ("wx"): een bestaand bestand wordt nooit overschreven
     // (EEXIST), ook niet met een opnieuw gebruikt upload-ticket. Mislukt het
     // schrijven halverwege, dan gaat het halve bestand weg.
     try {
-      await writeFile(doel, data, { flag: "wx" });
+      await writeFile(/* turbopackIgnore: true */ doel, data, { flag: "wx" });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") await rm(doel, { force: true });
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        await rm(/* turbopackIgnore: true */ doel, { force: true });
+      }
       throw error;
     }
   },
@@ -62,7 +66,7 @@ export const filesystemStorage: StorageDriver = {
 
     let grootte: number;
     try {
-      const info = await stat(bron);
+      const info = await stat(/* turbopackIgnore: true */ bron);
       if (!info.isFile()) return null;
       grootte = info.size;
     } catch {
@@ -77,7 +81,7 @@ export const filesystemStorage: StorageDriver = {
       : grootte - 1;
     const lengte = Math.max(0, einde - start + 1);
 
-    const handle = await open(bron, "r");
+    const handle = await open(/* turbopackIgnore: true */ bron, "r");
     try {
       const data = Buffer.alloc(lengte);
       if (lengte > 0) await handle.read(data, 0, lengte, start);
