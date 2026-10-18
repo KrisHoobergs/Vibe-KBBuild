@@ -1,4 +1,4 @@
-import { getValidInvitation } from "@/lib/db/repositories/invitations";
+import { createClient } from "@/lib/supabase/server";
 import { RegisterForm } from "@/components/auth/register-form";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { APP_NAME } from "@/lib/constants";
@@ -10,10 +10,15 @@ interface Props {
 
 export default async function InvitationPage({ params }: Props) {
   const { token } = await params;
+  const supabase = await createClient();
 
-  // Op de server opgezocht (de bezoeker is nog niet ingelogd); de pagina toont
-  // alleen het e-mailadres van deze ene uitnodiging.
-  const invitation = await getValidInvitation(token);
+  const { data: invitation } = await supabase
+    .from("invitations")
+    .select("*")
+    .eq("token", token)
+    .is("accepted_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .single();
 
   if (!invitation) {
     return (

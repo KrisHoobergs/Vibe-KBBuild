@@ -1,7 +1,6 @@
 "use server";
 
-import { getCurrentUser } from "@/lib/auth";
-import { searchArticlesInDb } from "@/lib/db/repositories/search";
+import { createClient } from "@/lib/supabase/server";
 import type { SearchResult } from "@/types";
 
 export async function searchArticles(params: {
@@ -12,18 +11,21 @@ export async function searchArticles(params: {
   offset?: number;
 }): Promise<SearchResult[]> {
   if (!params.query.trim()) return [];
-  if (!(await getCurrentUser())) return [];
 
-  try {
-    return await searchArticlesInDb({
-      query: params.query,
-      tagSlugs: params.tags?.length ? params.tags : null,
-      statuses: params.statuses?.length ? params.statuses : ["published"],
-      limit: params.limit ?? 20,
-      offset: params.offset ?? 0,
-    });
-  } catch (error) {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.rpc("search_articles", {
+    search_query: params.query,
+    tag_slugs: params.tags?.length ? params.tags : null,
+    status_filter: params.statuses?.length ? params.statuses : ["published"],
+    result_limit: params.limit ?? 20,
+    result_offset: params.offset ?? 0,
+  });
+
+  if (error) {
     console.error("Search error:", error);
     return [];
   }
+
+  return data ?? [];
 }

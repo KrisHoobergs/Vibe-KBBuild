@@ -1,9 +1,11 @@
-import { requireUser } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { PreferencesForm } from "@/components/profile/preferences-form";
 import { MailSettingsForm } from "@/components/profile/mail-settings-form";
 import { getMailSettingsStatus } from "@/actions/mail";
+import type { Profile } from "@/types";
 
 const TABS = ["gegevens", "voorkeuren", "email"] as const;
 
@@ -12,11 +14,24 @@ interface Props {
 }
 
 export default async function ProfilePage({ searchParams }: Props) {
-  const [profile, mailStatus, { tab }] = await Promise.all([
-    requireUser(),
+  const supabase = await createClient();
+
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims.sub;
+
+  if (!userId) {
+    redirect("/inloggen");
+  }
+
+  const [{ data: profile }, mailStatus, { tab }] = await Promise.all([
+    supabase.from("profiles").select("*").eq("id", userId).single<Profile>(),
     getMailSettingsStatus(),
     searchParams,
   ]);
+
+  if (!profile) {
+    redirect("/inloggen");
+  }
 
   // ?tab=email: de artikelpagina linkt hierheen als Gmail nog niet ingesteld is.
   const defaultTab = TABS.find((t) => t === tab) ?? "gegevens";

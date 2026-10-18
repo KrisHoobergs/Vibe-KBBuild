@@ -1,8 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { getAuthDriver } from "@/lib/auth";
-import { getValidInvitation, markInvitationAccepted } from "@/lib/db/repositories/invitations";
+import { createClient } from "@/lib/supabase/server";
 import { signInSchema, signUpSchema, resetPasswordSchema } from "@/lib/validations/auth";
 import type { ActionResult } from "@/types";
 
@@ -17,8 +16,12 @@ export async function signIn(formData: FormData): Promise<ActionResult> {
     return { success: false, error: parsed.error.issues[0].message };
   }
 
-  const result = await getAuthDriver().signIn(parsed.data.email, parsed.data.password);
-  if (!result.success) return result;
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signInWithPassword(parsed.data);
+
+  if (error) {
+    return { success: false, error: "Ongeldig e-mailadres of wachtwoord" };
+  }
 
   redirect("/artikelen");
 }
@@ -40,45 +43,53 @@ export async function signUp(
 
   // Verify invitation if token provided
   if (invitationToken) {
-    let invitation: Awaited<ReturnType<typeof getValidInvitation>>;
-    try {
-      invitation = await getValidInvitation(invitationToken);
-    } catch (error) {
-      console.error("Uitnodiging controleren mislukt:", error);
-      return { success: false, error: "Er ging iets mis, probeer het later opnieuw" };
-    }
+    const supabase = await createClient();
+    const { data: invitation } = await supabase
+      .from("invitations")
+      .select("*")
+      .eq("token", invitationToken)
+      .is("accepted_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .single();
 
     if (!invitation) {
       return { success: false, error: "Uitnodiging is ongeldig of verlopen" };
     }
 
-    if (invitation.email.toLowerCase() !== parsed.data.email.toLowerCase()) {
+    if (invitation.email !== parsed.data.email) {
       return { success: false, error: "E-mailadres komt niet overeen met de uitnodiging" };
     }
   }
 
-  const result = await getAuthDriver().signUp({
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
-    displayName: parsed.data.display_name,
+    options: {
+      data: {
+        display_name: parsed.data.display_name,
+      },
+    },
   });
-  if (!result.success) return result;
 
-  // Mark invitation as accepted. Het account bestaat dan al: een fout hier
-  // mag de registratie niet laten mislukken.
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  // Mark invitation as accepted
   if (invitationToken) {
-    try {
-      await markInvitationAccepted(invitationToken);
-    } catch (error) {
-      console.error("Uitnodiging als gebruikt markeren mislukt:", error);
-    }
+    await supabase
+      .from("invitations")
+      .update({ accepted_at: new Date().toISOString() })
+      .eq("token", invitationToken);
   }
 
   redirect("/artikelen");
 }
 
 export async function signOut(): Promise<void> {
-  await getAuthDriver().signOut();
+  const supabase = await createClient();
+  await supabase.auth.signOut();
   redirect("/inloggen");
 }
 
@@ -92,5 +103,14 @@ export async function resetPassword(formData: FormData): Promise<ActionResult> {
     return { success: false, error: parsed.error.issues[0].message };
   }
 
-  return getAuthDriver().requestPasswordReset(parsed.data.email);
+  const supabase = await createClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
+    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/api/auth/callback`,
+  });
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  return { success: true };
 }

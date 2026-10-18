@@ -9,9 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/utils";
-import { finalizeAvatar } from "@/actions/upload";
-import { updateProfile } from "@/actions/preferences";
-import { uploadBestand } from "@/lib/storage/client-upload";
+import { createClient } from "@/lib/supabase/client";
+import { uploadAvatar } from "@/actions/upload";
 import type { Profile } from "@/types";
 
 interface ProfileFormProps {
@@ -26,10 +25,14 @@ export function ProfileForm({ profile }: ProfileFormProps) {
 
   async function handleSave() {
     setSaving(true);
-    const result = await updateProfile({ display_name: displayName });
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("profiles")
+      .update({ display_name: displayName })
+      .eq("id", profile.id);
 
-    if (!result.success) {
-      toast.error(result.error ?? "Fout bij opslaan");
+    if (error) {
+      toast.error("Fout bij opslaan");
     } else {
       toast.success("Profiel opgeslagen");
       router.refresh();
@@ -42,9 +45,10 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     if (!file) return;
 
     setUploading(true);
-    const upload = await uploadBestand(file, "avatar");
-    const result =
-      upload.success && upload.data ? await finalizeAvatar(upload.data.url) : upload;
+    const formData = new FormData();
+    formData.set("file", file);
+
+    const result = await uploadAvatar(formData);
     if (result.success) {
       toast.success("Avatar bijgewerkt");
       router.refresh();

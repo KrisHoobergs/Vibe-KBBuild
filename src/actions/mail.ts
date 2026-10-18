@@ -4,12 +4,8 @@ import nodemailer from "nodemailer";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getCurrentUser } from "@/lib/auth";
-import {
-  deleteMailSettingsRow,
-  getMailSettingsRow,
-  upsertMailSettings,
-} from "@/lib/db/repositories/mail-settings";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { encryptSecret, decryptSecret } from "@/lib/crypto";
 import { buildArticleEmail } from "@/lib/email/article-email";
 import { getArticleBySlug } from "@/actions/articles";
@@ -17,9 +13,9 @@ import { APP_NAME } from "@/lib/constants";
 import type { ActionResult, MailSettingsStatus } from "@/types";
 
 // Artikels versturen via het eigen Gmail-account van de gebruiker (SMTP met
-// een app-wachtwoord). De tabel mail_settings is alleen via de server
-// bereikbaar (in Supabase: RLS zonder policies); elke actie raakt uitsluitend
-// de rij van de ingelogde gebruiker aan.
+// een app-wachtwoord). De tabel mail_settings is alleen via de service role
+// bereikbaar (RLS zonder policies); elke actie raakt uitsluitend de rij van
+// de ingelogde gebruiker aan.
 
 const settingsSchema = z.object({
   gmail_address: z.string().trim().toLowerCase().pipe(z.email("Ongeldig e-mailadres")),
@@ -42,7 +38,12 @@ export async function getMailSettingsStatus(): Promise<MailSettingsStatus> {
   const userId = await getUserId();
   if (!userId) return { configured: false, gmail_address: null };
 
-  const data = await getMailSettingsRow(userId);
+  const { data } = await createAdminClient()
+    .from("mail_settings")
+    .select("gmail_address")
+    .eq("user_id", userId)
+    .maybeSingle();
+
   return { configured: !!data, gmail_address: data?.gmail_address ?? null };
 }
 
@@ -71,10 +72,15 @@ export async function saveMailSettings(input: {
     return { success: false, error: MISSING_KEY_ERROR };
   }
 
-  try {
-    await upsertMailSettings(userId, gmail_address, encryptSecret(app_password));
-  } catch (error) {
-    console.error("Mailinstellingen opslaan mislukt:", error);
+  const { error } = await createAdminClient()
+    .from("mail_settings")
+    .upsert({
+      user_id: userId,
+      gmail_address,
+      app_password_encrypted: encryptSecret(app_password),
+    });
+
+  if (error) {
     return { success: false, error: "Opslaan mislukt" };
   }
 
@@ -86,10 +92,12 @@ export async function deleteMailSettings(): Promise<ActionResult> {
   const userId = await getUserId();
   if (!userId) return { success: false, error: "Niet ingelogd" };
 
-  try {
-    await deleteMailSettingsRow(userId);
-  } catch (error) {
-    console.error("Mailinstellingen verwijderen mislukt:", error);
+  const { error } = await createAdminClient()
+    .from("mail_settings")
+    .delete()
+    .eq("user_id", userId);
+
+  if (error) {
     return { success: false, error: "Verwijderen mislukt" };
   }
 
@@ -131,7 +139,10 @@ export async function sendArticleByMail(input: {
     return { success: false, error: parsed.error.issues[0].message };
   }
 
-  const user = await getCurrentUser();
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   if (!user) return { success: false, error: "Niet ingelogd" };
 
   const credentials = await getCredentials(user.id);
@@ -143,7 +154,12 @@ export async function sendArticleByMail(input: {
   const article = await getArticleBySlug(parsed.data.slug);
   if (!article) return { success: false, error: "Artikel niet gevonden" };
 
-  const senderName = user.display_name || gmail_address;
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("id", user.id)
+    .single();
+  const senderName = profile?.display_name ?? gmail_address;
 
   let email: Awaited<ReturnType<typeof buildArticleEmail>>;
   try {
@@ -179,7 +195,10 @@ export async function sendArticleByMail(input: {
 }
 
 async function getUserId(): Promise<string | null> {
-  const user = await getCurrentUser();
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   return user?.id ?? null;
 }
 
@@ -187,7 +206,11 @@ async function getUserId(): Promise<string | null> {
 async function getCredentials(
   userId: string
 ): Promise<ActionResult<{ gmail_address: string; app_password: string }>> {
-  const data = await getMailSettingsRow(userId);
+  const { data } = await createAdminClient()
+    .from("mail_settings")
+    .select("gmail_address, app_password_encrypted")
+    .eq("user_id", userId)
+    .maybeSingle();
 
   if (!data) {
     return { success: false, error: "Stel eerst je Gmail in bij Profiel → E-mail" };

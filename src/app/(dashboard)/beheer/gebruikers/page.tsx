@@ -1,9 +1,23 @@
-import { requireAdmin } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 import { getUsers, getInvitations } from "@/actions/admin";
 import { UserManagement } from "@/components/admin/user-management";
 
 export default async function UsersPage() {
-  await requireAdmin();
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) redirect("/inloggen");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .single();
+
+  if (!profile?.is_admin) redirect("/artikelen");
 
   const [users, invitations] = await Promise.all([
     getUsers(),

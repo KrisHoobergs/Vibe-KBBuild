@@ -1,69 +1,101 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUser, GEEN_BEHEERDER } from "@/lib/auth";
-import { listProfiles, profileExistsWithEmail } from "@/lib/db/repositories/profiles";
-import {
-  deleteInvitationById,
-  hasActiveInvitationFor,
-  insertInvitation,
-  listInvitations,
-} from "@/lib/db/repositories/invitations";
+import { createClient } from "@/lib/supabase/server";
 import type { ActionResult, Invitation, Profile } from "@/types";
 
-// Alles hier is alleen voor beheerders: elke functie controleert dat zelf,
-// want ze zijn ook rechtstreeks als server action aanroepbaar.
-
-async function isBeheerder(): Promise<boolean> {
-  const user = await getCurrentUser();
-  return !!user?.is_admin;
-}
-
 export async function inviteUser(email: string): Promise<ActionResult<Invitation>> {
-  const user = await getCurrentUser();
-  if (!user?.is_admin) return GEEN_BEHEERDER;
+  const supabase = await createClient();
 
-  const adres = email.trim();
-  if (!adres) {
-    return { success: false, error: "E-mailadres is verplicht" };
+  // Check if current user is admin
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return { success: false, error: "Niet ingelogd" };
   }
 
-  try {
-    if (await profileExistsWithEmail(adres)) {
-      return { success: false, error: "Deze gebruiker bestaat al" };
-    }
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_admin")
+    .eq("id", user.id)
+    .single();
 
-    if (await hasActiveInvitationFor(adres)) {
-      return { success: false, error: "Er is al een actieve uitnodiging voor dit e-mailadres" };
-    }
-
-    const invitation = await insertInvitation(adres, user.id);
-    revalidatePath("/beheer/gebruikers");
-    return { success: true, data: invitation };
-  } catch (error) {
-    console.error("Uitnodigen mislukt:", error);
-    return { success: false, error: "Uitnodiging aanmaken mislukt" };
+  if (!profile?.is_admin) {
+    return { success: false, error: "Geen beheerdersrechten" };
   }
+
+  // Check if user already exists
+  const { data: existingProfile } = await supabase
+    .from("profiles")
+    .select("id")
+    .eq("email", email)
+    .single();
+
+  if (existingProfile) {
+    return { success: false, error: "Deze gebruiker bestaat al" };
+  }
+
+  // Check if invitation already exists
+  const { data: existingInvite } = await supabase
+    .from("invitations")
+    .select("id")
+    .eq("email", email)
+    .is("accepted_at", null)
+    .gt("expires_at", new Date().toISOString())
+    .single();
+
+  if (existingInvite) {
+    return { success: false, error: "Er is al een actieve uitnodiging voor dit e-mailadres" };
+  }
+
+  const { data, error } = await supabase
+    .from("invitations")
+    .insert({
+      email,
+      invited_by: user.id,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  revalidatePath("/beheer/gebruikers");
+  return { success: true, data };
 }
 
 export async function getUsers(): Promise<Profile[]> {
-  if (!(await isBeheerder())) return [];
-  return listProfiles();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("profiles")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  return data ?? [];
 }
 
 export async function getInvitations(): Promise<Invitation[]> {
-  if (!(await isBeheerder())) return [];
-  return listInvitations();
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("invitations")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  return data ?? [];
 }
 
 export async function revokeInvitation(id: string): Promise<ActionResult> {
-  if (!(await isBeheerder())) return GEEN_BEHEERDER;
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("invitations")
+    .delete()
+    .eq("id", id);
 
-  try {
-    await deleteInvitationById(id);
-  } catch (error) {
-    console.error("Uitnodiging intrekken mislukt:", error);
-    return { success: false, error: "Intrekken mislukt" };
+  if (error) {
+    return { success: false, error: error.message };
   }
 
   revalidatePath("/beheer/gebruikers");
