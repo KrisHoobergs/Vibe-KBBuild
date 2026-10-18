@@ -1,7 +1,7 @@
 import "server-only";
 import type { Selectable } from "kysely";
 import { getDb } from "@/lib/db";
-import { toIso } from "@/lib/db/dialect";
+import { isUniqueViolation, toIso } from "@/lib/db/dialect";
 import type { ProfilesTable } from "@/lib/db/schema";
 import type { ArticleSort, Profile, Theme } from "@/types";
 
@@ -49,6 +49,65 @@ export async function profileExistsWithEmail(email: string): Promise<boolean> {
     .where("email", "=", email)
     .executeTakeFirst();
   return !!rij;
+}
+
+/**
+ * Is dit het oudste account van de installatie (eigen login)? Dat account wordt
+ * beheerder, net als bij de Supabase-trigger handle_new_user. Gebaseerd op
+ * auth_users en niet op het aantal profielen: zo kunnen twee gelijktijdige
+ * registraties niet allebei beheerder worden, en verandert een mislukt
+ * profiel niets aan wie de eerste was.
+ */
+async function isOudsteAccount(userId: string): Promise<boolean> {
+  const oudste = await getDb()
+    .selectFrom("auth_users")
+    .select("id")
+    .orderBy("createdAt")
+    .orderBy("id")
+    .offset(0)
+    .fetch(1)
+    .executeTakeFirst();
+  return oudste?.id === userId;
+}
+
+/**
+ * Profiel voor een account van de eigen login. Bestaat het al (bv. twee
+ * gelijktijdige aanvragen), dan gebeurt er niets.
+ */
+export async function createProfileForUser(input: {
+  id: string;
+  email: string;
+  displayName: string;
+}): Promise<void> {
+  const db = getDb();
+  if (await db.selectFrom("profiles").select("id").where("id", "=", input.id).executeTakeFirst()) return;
+
+  const nu = new Date();
+  try {
+    await db
+      .insertInto("profiles")
+      .values({
+        id: input.id,
+        email: input.email,
+        display_name: input.displayName.trim() || input.email.split("@")[0],
+        avatar_url: null,
+        is_admin: await isOudsteAccount(input.id),
+        created_at: nu,
+        updated_at: nu,
+      })
+      .execute();
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+  }
+}
+
+/** Zijn er al accounts in deze installatie (eigen login)? */
+export async function hasAnyAccount(): Promise<boolean> {
+  const telling = await getDb()
+    .selectFrom("auth_users")
+    .select((eb) => eb.fn.countAll<number>().as("n"))
+    .executeTakeFirstOrThrow();
+  return Number(telling.n) > 0;
 }
 
 export async function listProfiles(): Promise<Profile[]> {

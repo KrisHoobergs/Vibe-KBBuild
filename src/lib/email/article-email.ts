@@ -46,7 +46,7 @@ export async function buildArticleEmail(params: {
     contentHtml = `<p style="white-space: pre-wrap;">${escapeHtml(article.content_text)}</p>`;
   }
 
-  const { html: bodyHtml, attachments } = await embedImages(contentHtml);
+  const { html: bodyHtml, attachments } = await embedImages(contentHtml, articleUrl);
 
   const messageHtml = message
     ? `<div style="background: #f3f4f6; border-radius: 6px; padding: 12px 16px; margin: 0 0 24px 0;">
@@ -89,10 +89,10 @@ export async function buildArticleEmail(params: {
 /**
  * Vervangt afbeeldingen door CID-bijlagen, zodat ze niet als externe link
  * geblokkeerd worden, en geeft ze een vaste breedte voor klassiek Outlook.
- * Alleen data:-afbeeldingen en afbeeldingen uit onze eigen Supabase Storage
- * worden opgehaald, nooit willekeurige URL's.
+ * Alleen data:-afbeeldingen en afbeeldingen uit de eigen opslag worden
+ * opgehaald, nooit willekeurige URL's.
  */
-async function embedImages(html: string): Promise<{
+async function embedImages(html: string, articleUrl: string): Promise<{
   html: string;
   attachments: ArticleEmail["attachments"];
 }> {
@@ -144,8 +144,16 @@ async function embedImages(html: string): Promise<{
     const style = "display: block; max-width: 100%; height: auto; border-radius: 6px; margin: 12px 0;";
 
     if (!embedded) {
-      // Niet ingesloten (andere host of te groot): link laten staan.
-      return `<img src="${escapeHtml(src)}" alt="${alt}" style="${style}" />`;
+      // Niet ingesloten. Een afbeelding van een andere host kan de mailclient
+      // zelf laden. Een relatieve URL of een bestand uit de eigen opslag
+      // (database/map, alleen met login) niet: dan een verwijzing naar het artikel.
+      const storage = getStorage();
+      const absoluut = /^https?:\/\//i.test(src);
+      const alleenMetLogin = storage.kind !== "supabase" && !!storage.resolveOwnUrl(src);
+      if (absoluut && !alleenMetLogin) {
+        return `<img src="${escapeHtml(src)}" alt="${alt}" style="${style}" />`;
+      }
+      return `<p style="color: #666; font-size: 13px; font-style: italic; margin: 12px 0;">[Afbeelding${alt ? `: ${alt}` : ""} niet meegestuurd. <a href="${escapeHtml(articleUrl)}">Bekijk ze in het artikel</a>.]</p>`;
     }
     const size = `width="${embedded.width}"${embedded.height ? ` height="${embedded.height}"` : ""}`;
     return `<img src="cid:${embedded.cid}" alt="${alt}" ${size} style="${style}" />`;

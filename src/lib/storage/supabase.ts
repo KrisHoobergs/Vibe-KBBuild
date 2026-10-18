@@ -1,18 +1,13 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
-import type { Bucket, StorageDriver } from "./types";
+import { isGeldigBestand } from "./paden";
+import type { StorageDriver } from "./types";
 
 // Supabase Storage: publieke buckets "articles" en "avatars". De publieke URL's
 // staan in de artikel-JSON en in profiles.avatar_url, dus het URL-formaat moet
 // gelijk blijven. Bestaande bestanden worden nooit verplaatst of verwijderd.
 
-const BUCKETS: Bucket[] = ["articles", "avatars"];
 const PUBLIEK_PREFIX = "/storage/v1/object/public/";
-
-// Alleen paden zoals de app ze zelf maakt: mappen van [A-Za-z0-9_-] en een
-// bestandsnaam "naam.ext". Zo kan een pad met bv. "..", een (gecodeerde)
-// backslash, "?" of "#" nooit naar een ander adres op de Supabase-host leiden.
-const VEILIG_PAD = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/;
 
 /** Hoe lang een bestand ophalen mag duren (bv. afbeeldingen voor een mail). */
 const DOWNLOAD_TIMEOUT_MS = 10_000;
@@ -28,7 +23,7 @@ export const supabaseStorage: StorageDriver = {
 
   async prepareUpload(bucket, pad) {
     // Met de sessie van de gebruiker: de storage-policies laten alleen
-    // ingelogde gebruikers uploaden.
+    // ingelogde gebruikers uploaden. Type en grootte dwingen de buckets af.
     const supabase = await createClient();
     const { data, error } = await supabase.storage.from(bucket).createSignedUploadUrl(pad);
     if (error || !data) throw new Error(error?.message ?? "Upload voorbereiden mislukt");
@@ -56,22 +51,24 @@ export const supabaseStorage: StorageDriver = {
       const rest = decodeURIComponent(u.pathname.slice(PUBLIEK_PREFIX.length));
       const [bucket, ...delen] = rest.split("/");
       const pad = delen.join("/");
-      if (!BUCKETS.includes(bucket as Bucket) || !VEILIG_PAD.test(pad)) return null;
-      return { bucket: bucket as Bucket, pad };
+      return isGeldigBestand(bucket, pad) ? { bucket, pad } : null;
     } catch {
       return null;
     }
   },
 
   async get(bucket, pad) {
-    if (!BUCKETS.includes(bucket) || !VEILIG_PAD.test(pad)) return null;
+    // Bereikaanvragen zijn hier niet nodig: de buckets zijn publiek en de
+    // browser haalt video's rechtstreeks bij Supabase.
+    if (!isGeldigBestand(bucket, pad)) return null;
     try {
       const supabase = await createClient();
       const { data, error } = await supabase.storage
         .from(bucket)
         .download(pad, {}, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
       if (error || !data) return null;
-      return { data: Buffer.from(await data.arrayBuffer()), contentType: data.type };
+      const buffer = Buffer.from(await data.arrayBuffer());
+      return { data: buffer, contentType: data.type, grootte: buffer.length };
     } catch {
       // Bv. een time-out: het bestand wordt dan overgeslagen.
       return null;

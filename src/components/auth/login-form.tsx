@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { APP_NAME } from "@/lib/constants";
 
-export function LoginForm() {
+export function LoginForm({ melding }: { melding?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -31,6 +31,9 @@ export function LoginForm() {
       </CardHeader>
       <CardContent>
         <form action={handleSubmit} className="space-y-4">
+          {melding && !error && (
+            <div className="rounded-md bg-primary/10 p-3 text-sm text-foreground">{melding}</div>
+          )}
           {error && (
             <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
               {error}

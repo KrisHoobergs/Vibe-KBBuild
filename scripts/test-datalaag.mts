@@ -186,17 +186,19 @@ try {
     assert.equal(rij.is_pinned, true);
     assert.equal(rij.pin_order, maxVoor?.m == null ? 0 : Number(maxVoor.m) + 1);
 
-    const gepind = (
-      await db.selectFrom("articles").select("id").where("is_pinned", "=", true).orderBy("pin_order").orderBy("id").execute()
-    ).map((r) => r.id);
-    const omgekeerd = [...gepind].reverse();
-    await artikelen.reorderPinned(omgekeerd);
+    // Herordenen alleen met eigen testartikels: echte gepinde artikels
+    // aanraken zou hun updated_at (trigger) veranderen.
+    const tweede = await artikelen.insertArticle(
+      { title: `${PREFIX} Gepind twee`, excerpt: null, content: {}, content_text: "", cover_image_url: null, tag_ids: [] },
+      auteurId
+    );
+    assert.equal(await artikelen.togglePin(tweede.id), true);
+    await artikelen.reorderPinned([tweede.id, artikelId]);
     const naHerordenen = (
-      await db.selectFrom("articles").select(["id", "pin_order"]).where("id", "in", omgekeerd).execute()
+      await db.selectFrom("articles").select(["id", "pin_order"]).where("id", "in", [artikelId, tweede.id]).execute()
     ).sort((x, y) => x.pin_order - y.pin_order).map((r) => r.id);
-    assert.deepEqual(naHerordenen, omgekeerd);
-    // Oorspronkelijke volgorde van de echte gepinde artikelen herstellen.
-    await artikelen.reorderPinned(gepind);
+    assert.deepEqual(naHerordenen, [tweede.id, artikelId]);
+    await artikelen.deleteArticleById(tweede.id);
 
     assert.equal(await artikelen.togglePin(artikelId), true);
     rij = await db.selectFrom("articles").select(["is_pinned", "pin_order"]).where("id", "=", artikelId).executeTakeFirstOrThrow();

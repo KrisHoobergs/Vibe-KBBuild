@@ -10,7 +10,9 @@
     "db:backup": "tsx scripts/backup-export.mts",
     "db:lokaal": "tsx scripts/lokale-db.mts",
     "db:vergelijk": "tsx --conditions=react-server scripts/vergelijk-datalaag.mts",
-    "db:test": "tsx --conditions=react-server scripts/test-datalaag.mts"
+    "db:test": "tsx --conditions=react-server scripts/test-datalaag.mts",
+    "db:migrate": "tsx scripts/db-migrate.mts",
+    "test:opslag": "tsx --conditions=react-server scripts/test-opslag.mts"
   },
   "engines": {
     "node": ">=22"
@@ -34,6 +36,7 @@
     "@tiptap/react": "^3.20.0",
     "@tiptap/starter-kit": "^3.20.0",
     "@vercel/functions": "^3.10.1",
+    "better-auth": "^1.7.10",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

@@ -8,6 +8,7 @@ import type { AuthDriver } from "./types";
 
 export const supabaseAuth: AuthDriver = {
   kind: "supabase",
+  herstel: "email",
 
   async getIdentity() {
     const supabase = await createClient();

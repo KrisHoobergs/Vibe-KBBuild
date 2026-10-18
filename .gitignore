@@ -38,6 +38,9 @@ yarn-error.log*
 /.lokale-db/
 /scripts/.tmp/
 
+# Playwright MCP (snapshots, logs, testbestanden)
+/.playwright-mcp/
+
 # claude
 .claude/
 

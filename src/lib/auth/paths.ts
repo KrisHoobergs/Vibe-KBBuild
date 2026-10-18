@@ -6,7 +6,7 @@
 export const AUTH_PAGINAS = ["/inloggen", "/registreren", "/wachtwoord-vergeten"];
 
 /** Altijd bereikbaar, ingelogd of niet. */
-export const OPEN_PAGINAS = ["/uitnodiging"];
+export const OPEN_PAGINAS = ["/uitnodiging", "/wachtwoord-herstellen"];
 
 function past(pad: string, prefix: string) {
   return pad === prefix || pad.startsWith(`${prefix}/`);

@@ -29,6 +29,13 @@ const envSchema = z.object({
 
   STORAGE_DIR: z.preprocess(leegIsOngezet, z.string().optional()),
 
+  // Geheime sleutel voor de eigen login (sessies) en voor upload-tickets bij
+  // opslag in de database of een map. Minstens 32 tekens, willekeurig.
+  BETTER_AUTH_SECRET: z.preprocess(leegIsOngezet, z.string().min(32, "moet minstens 32 tekens lang zijn").optional()),
+
+  // Migraties automatisch uitvoeren bij het opstarten (nooit bij Supabase).
+  DB_AUTO_MIGRATE: z.preprocess(leegIsOngezet, z.enum(["true", "false"]).default("false")),
+
   SITE_URL: z.preprocess(leegIsOngezet, z.string().url().optional()),
   NEXT_PUBLIC_SITE_URL: z.preprocess(leegIsOngezet, z.string().url().optional()),
 });
@@ -44,6 +51,9 @@ export type AppConfig = {
   db: DbConfig;
   auth: { driver: "supabase" | "local"; registratie: "open" | "uitnodiging" };
   storage: { driver: "supabase" | "database" | "filesystem"; dir?: string };
+  /** Alleen gezet waar nodig: eigen login of opslag in database/map. */
+  secret: string | undefined;
+  autoMigrate: boolean;
   siteUrl: string | undefined;
 };
 
@@ -111,14 +121,29 @@ export function leesConfig(env: Record<string, string | undefined> = process.env
   if (e.STORAGE_DRIVER === "filesystem" && !e.STORAGE_DIR) {
     throw new ConfigFout("STORAGE_DRIVER=filesystem vraagt ook STORAGE_DIR");
   }
+  if (e.STORAGE_DRIVER === "filesystem" && env.VERCEL) {
+    throw new ConfigFout("STORAGE_DRIVER=filesystem werkt niet op Vercel (de schijf is daar tijdelijk)");
+  }
+  if (e.STORAGE_DRIVER === "database" && e.AUTH_DRIVER === "supabase") {
+    // De tabel files bestaat alleen in installaties die `npm run db:migrate` gebruiken.
+    throw new ConfigFout("STORAGE_DRIVER=database kan alleen met de eigen login (AUTH_DRIVER=local)");
+  }
   if (e.DB_DIALECT === "mssql") {
     throw new ConfigFout("SQL Server wordt nog niet ondersteund");
   }
-  if (e.AUTH_DRIVER === "local") {
-    throw new ConfigFout("De eigen login (AUTH_DRIVER=local) wordt nog niet ondersteund");
-  }
   if (!e.DATABASE_URL) {
     throw new ConfigFout("DATABASE_URL ontbreekt");
+  }
+
+  const siteUrl = (e.SITE_URL ?? e.NEXT_PUBLIC_SITE_URL)?.replace(/\/$/, "");
+  const eigenOpslag = e.STORAGE_DRIVER === "database" || e.STORAGE_DRIVER === "filesystem";
+  if ((e.AUTH_DRIVER === "local" || eigenOpslag) && !e.BETTER_AUTH_SECRET) {
+    throw new ConfigFout(
+      "BETTER_AUTH_SECRET ontbreekt (nodig voor de eigen login en voor opslag in de database of een map)"
+    );
+  }
+  if (e.AUTH_DRIVER === "local" && !siteUrl) {
+    throw new ConfigFout("SITE_URL ontbreekt (het publieke adres van deze installatie, bv. https://kennis.voorbeeld.be)");
   }
 
   const { url, sslmode } = normaliseerDatabaseUrl(e.DATABASE_URL);
@@ -133,7 +158,9 @@ export function leesConfig(env: Record<string, string | undefined> = process.env
     },
     auth: { driver: e.AUTH_DRIVER, registratie: e.REGISTRATIE },
     storage: { driver: e.STORAGE_DRIVER, dir: e.STORAGE_DIR },
-    siteUrl: e.SITE_URL ?? e.NEXT_PUBLIC_SITE_URL,
+    secret: e.BETTER_AUTH_SECRET,
+    autoMigrate: e.DB_AUTO_MIGRATE === "true",
+    siteUrl,
   };
 }
 

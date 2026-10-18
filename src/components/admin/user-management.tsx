@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, Trash2, Copy, Check } from "lucide-react";
+import { UserPlus, Trash2, Copy, Check, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,22 +17,50 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { inviteUser, revokeInvitation } from "@/actions/admin";
-import { formatDate, getInitials } from "@/lib/utils";
+import { createPasswordResetLink, inviteUser, revokeInvitation } from "@/actions/admin";
+import { formatDate, formatDateTime, getInitials } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Profile, Invitation } from "@/types";
 
 interface UserManagementProps {
   users: Profile[];
   invitations: Invitation[];
+  /** Eigen login: de beheerder maakt herstellinks (er is geen mailserver). */
+  herstellinks?: boolean;
 }
 
-export function UserManagement({ users, invitations }: UserManagementProps) {
+export function UserManagement({ users, invitations, herstellinks = false }: UserManagementProps) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [copiedToken, setCopiedToken] = useState<string | null>(null);
+  const [herstel, setHerstel] = useState<{ naam: string; url: string; verloopt: string } | null>(null);
+  const [herstelBezig, setHerstelBezig] = useState<string | null>(null);
+  const [herstelGekopieerd, setHerstelGekopieerd] = useState(false);
+
+  async function handleHerstellink(gebruiker: Profile) {
+    setHerstelBezig(gebruiker.id);
+    const result = await createPasswordResetLink(gebruiker.id);
+    setHerstelBezig(null);
+    if (!result.success || !result.data) {
+      toast.error(result.error ?? "Herstellink maken mislukt");
+      return;
+    }
+    setHerstelGekopieerd(false);
+    setHerstel({
+      naam: gebruiker.display_name,
+      url: `${window.location.origin}/wachtwoord-herstellen/${result.data.token}`,
+      verloopt: result.data.expiresAt,
+    });
+  }
+
+  async function kopieerHerstellink() {
+    if (!herstel) return;
+    await navigator.clipboard.writeText(herstel.url);
+    setHerstelGekopieerd(true);
+    toast.success("Herstellink gekopieerd");
+  }
 
   async function handleInvite() {
     if (!email.trim()) return;
@@ -139,6 +167,18 @@ export function UserManagement({ users, invitations }: UserManagementProps) {
                 <span className="text-xs text-muted-foreground">
                   Lid sinds {formatDate(u.created_at)}
                 </span>
+                {herstellinks && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleHerstellink(u)}
+                    disabled={herstelBezig === u.id}
+                    title="Herstellink maken om een nieuw wachtwoord in te stellen"
+                  >
+                    <KeyRound className="mr-1 h-3 w-3" />
+                    Herstellink
+                  </Button>
+                )}
               </div>
             </div>
           ))}
@@ -190,6 +230,26 @@ export function UserManagement({ users, invitations }: UserManagementProps) {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={!!herstel} onOpenChange={(open) => !open && setHerstel(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Herstellink voor {herstel?.naam}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Geef deze link zelf door. Hij werkt één keer en is geldig tot{" "}
+              {herstel ? formatDateTime(herstel.verloopt) : ""}. Na het instellen van een nieuw
+              wachtwoord worden alle bestaande sessies van deze gebruiker afgemeld.
+            </p>
+            <Input readOnly value={herstel?.url ?? ""} onFocus={(e) => e.currentTarget.select()} />
+            <Button onClick={kopieerHerstellink} className="w-full">
+              {herstelGekopieerd ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+              Link kopiëren
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

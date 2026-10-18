@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getCurrentUser, GEEN_BEHEERDER } from "@/lib/auth";
-import { listProfiles, profileExistsWithEmail } from "@/lib/db/repositories/profiles";
+import { getAuthDriver, getCurrentUser, GEEN_BEHEERDER } from "@/lib/auth";
+import { insertPasswordReset } from "@/lib/db/repositories/password-resets";
+import { getProfileById, listProfiles, profileExistsWithEmail } from "@/lib/db/repositories/profiles";
 import {
   deleteInvitationById,
   hasActiveInvitationFor,
@@ -23,9 +24,10 @@ export async function inviteUser(email: string): Promise<ActionResult<Invitation
   const user = await getCurrentUser();
   if (!user?.is_admin) return GEEN_BEHEERDER;
 
-  const adres = email.trim();
-  if (!adres) {
-    return { success: false, error: "E-mailadres is verplicht" };
+  // Kleine letters, zoals de login-systemen e-mailadressen ook opslaan.
+  const adres = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adres)) {
+    return { success: false, error: "Ongeldig e-mailadres" };
   }
 
   try {
@@ -54,6 +56,31 @@ export async function getUsers(): Promise<Profile[]> {
 export async function getInvitations(): Promise<Invitation[]> {
   if (!(await isBeheerder())) return [];
   return listInvitations();
+}
+
+/**
+ * Herstellink voor een gebruiker (alleen bij de eigen login). De beheerder geeft
+ * de link zelf door; hij werkt één keer en is 7 dagen geldig.
+ */
+export async function createPasswordResetLink(
+  userId: string
+): Promise<ActionResult<{ token: string; expiresAt: string }>> {
+  const user = await getCurrentUser();
+  if (!user?.is_admin) return GEEN_BEHEERDER;
+  if (getAuthDriver().herstel !== "beheerderslink") {
+    return { success: false, error: "Bij deze installatie herstellen gebruikers hun wachtwoord via e-mail" };
+  }
+
+  try {
+    if (!(await getProfileById(userId))) {
+      return { success: false, error: "Gebruiker niet gevonden" };
+    }
+    const { token, expiresAt } = await insertPasswordReset(userId, user.id);
+    return { success: true, data: { token, expiresAt: expiresAt.toISOString() } };
+  } catch (error) {
+    console.error("Herstellink maken mislukt:", error);
+    return { success: false, error: "Herstellink maken mislukt" };
+  }
 }
 
 export async function revokeInvitation(id: string): Promise<ActionResult> {

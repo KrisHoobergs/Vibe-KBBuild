@@ -35,6 +35,25 @@ export async function uploadBestand(
   }
 
   const t = ticket.data;
+  if (t.methode === "post") {
+    // Eigen opslag (database of map): rechtstreeks naar de upload-route.
+    try {
+      const antwoord = await fetch(t.uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!antwoord.ok) {
+        const fout = (await antwoord.json().catch(() => null)) as { error?: string } | null;
+        return { success: false, error: fout?.error ?? "Uploaden is mislukt" };
+      }
+    } catch (error) {
+      console.error("Upload mislukt:", error);
+      return { success: false, error: "Uploaden is mislukt" };
+    }
+    return { success: true, data: { url: t.url } };
+  }
+
   const { error } = await supabaseVoor(t.supabaseUrl, t.anonKey)
     .storage.from(t.bucket)
     .uploadToSignedUrl(t.pad, t.token, file, { contentType: file.type, cacheControl: "3600" });

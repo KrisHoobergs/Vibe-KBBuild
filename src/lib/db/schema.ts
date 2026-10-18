@@ -73,11 +73,46 @@ export interface MailSettingsTable {
   updated_at: Tijdstip;
 }
 
+/** Herstellinks die een beheerder maakt (alleen bij de eigen login). */
+export interface PasswordResetsTable {
+  id: string;
+  user_id: string;
+  token: string;
+  created_by: string | null;
+  expires_at: Tijdstip;
+  used_at: OptioneelTijdstip;
+  created_at: Tijdstip;
+}
+
+/** Bestanden bij STORAGE_DRIVER=database. */
+export interface FilesTable {
+  bucket: string;
+  path: string;
+  content_type: string;
+  size: number;
+  data: Buffer;
+  created_by: string | null;
+  created_at: Tijdstip;
+}
+
+/**
+ * Accounts van de eigen login (Better Auth beheert deze tabel). De app leest
+ * er alleen uit, om de eerste gebruiker te bepalen. Kolomnamen in camelCase.
+ */
+export interface AuthUsersTable {
+  id: string;
+  email: string;
+  createdAt: Tijdstip;
+}
+
 export interface Database {
+  auth_users: AuthUsersTable;
   profiles: ProfilesTable;
   tags: TagsTable;
   articles: ArticlesTable;
   article_tags: ArticleTagsTable;
   invitations: InvitationsTable;
   mail_settings: MailSettingsTable;
+  password_resets: PasswordResetsTable;
+  files: FilesTable;
 }

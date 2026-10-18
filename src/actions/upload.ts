@@ -5,13 +5,17 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser, NIET_INGELOGD } from "@/lib/auth";
 import { updateProfileFields } from "@/lib/db/repositories/profiles";
 import { getStorage, type Bucket, type UploadTicket } from "@/lib/storage";
+import { eigenBestandUrl } from "@/lib/storage/paden";
 import type { ActionResult } from "@/types";
 import { MAX_IMAGE_SIZE, MAX_VIDEO_SIZE, ACCEPTED_IMAGE_TYPES, ACCEPTED_VIDEO_TYPES } from "@/lib/constants";
 
 // Uploaden gebeurt in twee stappen: de server controleert het verzoek en geeft
 // een eenmalige upload-ticket, daarna stuurt de browser het bestand zelf naar
 // de opslag (zie src/lib/storage/client-upload.ts). Zo begrenzen server actions
-// (1 MB) en Vercel (4,5 MB) de bestandsgrootte niet.
+// (1 MB) en Vercel (4,5 MB) de bestandsgrootte niet. Uitzondering: eigen opslag
+// (database) op Vercel, die gaat wel via een functie.
+
+const MAX_UPLOAD_OP_VERCEL = 4 * 1024 * 1024;
 
 export type UploadSoort = "afbeelding" | "video" | "avatar";
 
@@ -67,8 +71,24 @@ export async function prepareUpload(input: {
     pad = `articles/${map}/${bestand}`;
   }
 
+  const storage = getStorage();
+  let maxGrootte = input.soort === "video" ? MAX_VIDEO_SIZE : MAX_IMAGE_SIZE;
+  // Uploads naar de eigen opslag gaan via een Vercel-functie, en die aanvaardt
+  // hooguit 4,5 MB per verzoek.
+  if (process.env.VERCEL && storage.kind !== "supabase") {
+    maxGrootte = Math.min(maxGrootte, MAX_UPLOAD_OP_VERCEL);
+    if (input.grootte > maxGrootte) {
+      return { success: false, error: "Bestand is te groot. Op deze installatie is het maximum 4MB." };
+    }
+  }
+
   try {
-    return { success: true, data: await getStorage().prepareUpload(bucket, pad) };
+    const ticket = await storage.prepareUpload(bucket, pad, {
+      contentType: input.contentType,
+      maxGrootte,
+      userId: user.id,
+    });
+    return { success: true, data: ticket };
   } catch (error) {
     console.error("Upload voorbereiden mislukt:", error);
     return { success: false, error: "Uploaden is mislukt" };
@@ -81,18 +101,21 @@ export async function finalizeAvatar(url: string): Promise<ActionResult<{ url: s
   if (!user) return NIET_INGELOGD;
 
   // Alleen een bestand uit de eigen map van deze gebruiker.
-  const eigen = getStorage().resolveOwnUrl(url);
+  const storage = getStorage();
+  const eigen = storage.resolveOwnUrl(url);
   if (!eigen || eigen.bucket !== "avatars" || !eigen.pad.startsWith(`avatars/${user.id}/`)) {
     return { success: false, error: "Ongeldige avatar" };
   }
+  // Nooit de tekst van de browser opslaan, maar de nette URL van dat bestand.
+  const avatarUrl = storage.kind === "supabase" ? url : eigenBestandUrl(eigen.bucket, eigen.pad);
 
   try {
-    await updateProfileFields(user.id, { avatar_url: url });
+    await updateProfileFields(user.id, { avatar_url: avatarUrl });
   } catch (error) {
     console.error("Avatar opslaan mislukt:", error);
     return { success: false, error: "Avatar opslaan mislukt" };
   }
 
   revalidatePath("/", "layout");
-  return { success: true, data: { url } };
+  return { success: true, data: { url: avatarUrl } };
 }

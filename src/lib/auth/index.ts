@@ -3,8 +3,9 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import { getConfig } from "@/lib/config";
-import { getProfileById } from "@/lib/db/repositories/profiles";
+import { createProfileForUser, getProfileById } from "@/lib/db/repositories/profiles";
 import type { Profile } from "@/types";
+import { localAuth } from "./local";
 import { supabaseAuth } from "./supabase";
 import type { AuthDriver, Identiteit } from "./types";
 
@@ -13,9 +14,7 @@ import type { AuthDriver, Identiteit } from "./types";
 // aanroepbaar, dus elke zo'n functie controleert zelf wie er ingelogd is.
 
 export function getAuthDriver(): AuthDriver {
-  const { driver } = getConfig().auth;
-  if (driver === "supabase") return supabaseAuth;
-  throw new Error(`Login-systeem "${driver}" wordt nog niet ondersteund`);
+  return getConfig().auth.driver === "local" ? localAuth : supabaseAuth;
 }
 
 /** Wie is ingelogd (één keer per request opgehaald). */
@@ -30,6 +29,15 @@ export const getIdentity = cache(async (): Promise<Identiteit | null> => {
 export const getCurrentUser = cache(async (): Promise<Profile | null> => {
   const identiteit = await getIdentity();
   if (!identiteit) return null;
+  const profiel = await getProfileById(identiteit.userId);
+  if (profiel || getAuthDriver().kind !== "local" || !identiteit.email) return profiel;
+
+  // Eigen login: account zonder profiel (het aanmaken na registratie mislukte).
+  await createProfileForUser({
+    id: identiteit.userId,
+    email: identiteit.email,
+    displayName: identiteit.email.split("@")[0],
+  });
   return getProfileById(identiteit.userId);
 });
 
