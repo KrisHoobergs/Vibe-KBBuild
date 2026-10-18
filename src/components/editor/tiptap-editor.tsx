@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
+import { useRef, useState, useCallback, useEffect, useLayoutEffect } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { Toolbar } from "./toolbar";
 import { editorExtensions } from "./extensions";
 import { uploadBestand } from "@/lib/storage/client-upload";
+import { GeplakteAfbeeldingen } from "./geplakte-afbeeldingen";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +23,8 @@ interface TiptapEditorProps {
   onChange: (json: Record<string, unknown>, text: string) => void;
   articleId?: string;
   editable?: boolean;
+  /** Loopt er een upload? Het formulier wacht daarop met opslaan. */
+  onUploadingChange?: (bezig: boolean) => void;
 }
 
 export function TiptapEditor({
@@ -29,15 +32,30 @@ export function TiptapEditor({
   onChange,
   articleId,
   editable = true,
+  onUploadingChange,
 }: TiptapEditorProps) {
   const imageInputRef = useRef<HTMLInputElement>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
   const [videoDialogOpen, setVideoDialogOpen] = useState(false);
   const [videoUrl, setVideoUrl] = useState("");
-  const [uploading, setUploading] = useState(false);
+  // Teller, want uploads kunnen elkaar overlappen (plakken, slepen, de knoppen).
+  // zetBezig is stabiel: de editor en zijn extensies worden maar één keer gemaakt.
+  const [lopendeUploads, setLopendeUploads] = useState(0);
+  const zetBezig = useCallback(
+    (bezig: boolean) => setLopendeUploads((n) => Math.max(0, n + (bezig ? 1 : -1))),
+    []
+  );
+  const uploading = lopendeUploads > 0;
+  // Meteen na de render doorgeven, zodat ook een Ctrl+S vlak na het plakken wacht.
+  useLayoutEffect(() => {
+    onUploadingChange?.(uploading);
+  }, [uploading, onUploadingChange]);
 
   const editor = useEditor({
-    extensions: editorExtensions,
+    extensions: [
+      ...editorExtensions,
+      GeplakteAfbeeldingen.configure({ articleId: articleId ?? "temp", zetBezig }),
+    ],
     content: Object.keys(content).length > 0 ? content : undefined,
     editable,
     immediatelyRender: false,
@@ -77,21 +95,23 @@ export function TiptapEditor({
       const file = e.target.files?.[0];
       if (!file || !editor) return;
 
-      setUploading(true);
-      const result = await uploadBestand(file, "afbeelding", articleId ?? "temp");
-      if (result.success && result.data) {
-        editor.chain().focus().setImage({ src: result.data.url }).run();
-      } else {
-        toast.error(result.error ?? "Fout bij uploaden van afbeelding");
-      }
-      setUploading(false);
-
-      // Reset input
-      if (imageInputRef.current) {
-        imageInputRef.current.value = "";
+      zetBezig(true);
+      try {
+        const result = await uploadBestand(file, "afbeelding", articleId ?? "temp");
+        if (result.success && result.data) {
+          editor.chain().focus().setImage({ src: result.data.url }).run();
+        } else {
+          toast.error(result.error ?? "Fout bij uploaden van afbeelding");
+        }
+      } finally {
+        // Altijd terugzetten, anders blijft opslaan geblokkeerd.
+        zetBezig(false);
+        if (imageInputRef.current) {
+          imageInputRef.current.value = "";
+        }
       }
     },
-    [editor, articleId]
+    [editor, articleId, zetBezig]
   );
 
   const handleVideoEmbed = useCallback(() => {
@@ -135,27 +155,30 @@ export function TiptapEditor({
       const file = e.target.files?.[0];
       if (!file || !editor) return;
 
-      setUploading(true);
-      const result = await uploadBestand(file, "video", articleId ?? "temp");
-      if (result.success && result.data) {
-        editor
-          .chain()
-          .focus()
-          .insertContent(
-            `<div data-video-upload="true" class="my-4"><video controls src="${result.data.url}" style="width: 100%; border-radius: 8px;"></video></div>`
-          )
-          .run();
-        setVideoDialogOpen(false);
-      } else {
-        toast.error(result.error ?? "Fout bij uploaden van video");
-      }
-      setUploading(false);
-
-      if (videoInputRef.current) {
-        videoInputRef.current.value = "";
+      zetBezig(true);
+      try {
+        const result = await uploadBestand(file, "video", articleId ?? "temp");
+        if (result.success && result.data) {
+          editor
+            .chain()
+            .focus()
+            .insertContent(
+              `<div data-video-upload="true" class="my-4"><video controls src="${result.data.url}" style="width: 100%; border-radius: 8px;"></video></div>`
+            )
+            .run();
+          setVideoDialogOpen(false);
+        } else {
+          toast.error(result.error ?? "Fout bij uploaden van video");
+        }
+      } finally {
+        // Altijd terugzetten, anders blijft opslaan geblokkeerd.
+        zetBezig(false);
+        if (videoInputRef.current) {
+          videoInputRef.current.value = "";
+        }
       }
     },
-    [editor, articleId]
+    [editor, articleId, zetBezig]
   );
 
   if (!editor) return null;

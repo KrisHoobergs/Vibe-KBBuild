@@ -15,25 +15,32 @@ const pgTypes = {
   },
 };
 
-export function maakPostgresPool(config: DbConfig, opties: { verbindingsTimeoutMs?: number } = {}) {
-  return new pg.Pool({
+export type PoolOpties = { verbindingsTimeoutMs?: number; idleTimeoutMs?: number };
+
+export function maakPostgresPool(config: DbConfig, opties: PoolOpties = {}) {
+  const pool = new pg.Pool({
     connectionString: config.url,
     ssl: config.ssl,
     max: config.poolMax,
-    // Kort houden: serverless functies blijven niet lang leven, en de
-    // Supabase-pooler heeft een beperkt aantal verbindingen.
-    idleTimeoutMillis: 5_000,
+    // Standaard kort (scripts, gezondheidscheck). De app zelf houdt
+    // verbindingen langer open (zie getDb), zodat een klik na even lezen geen
+    // nieuwe verbinding naar de database hoeft op te zetten.
+    idleTimeoutMillis: opties.idleTimeoutMs ?? 5_000,
     // Ruim genoeg voor een database die eerst moet ontwaken (bv. Neon na
     // een paar minuten zonder gebruik).
     connectionTimeoutMillis: opties.verbindingsTimeoutMs ?? 15_000,
     types: pgTypes,
     application_name: "kbbuild",
   });
+  // Een ongebruikte verbinding die de database of pooler sluit, geeft een
+  // 'error' op de pool. Zonder luisteraar zou dat het hele proces stoppen.
+  pool.on("error", (error) => console.error("[db] ongebruikte verbinding verbroken:", error.message));
+  return pool;
 }
 
 export function maakKysely(
   config: DbConfig,
-  opties: { verbindingsTimeoutMs?: number } = {}
+  opties: PoolOpties = {}
 ): { db: Kysely<Database>; pool: pg.Pool } {
   const pool = maakPostgresPool(config, opties);
   return { db: new Kysely<Database>({ dialect: new PostgresDialect({ pool }) }), pool };

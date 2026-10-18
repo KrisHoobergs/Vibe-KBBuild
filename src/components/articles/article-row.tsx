@@ -29,7 +29,7 @@ export function ArticleRow({ article }: ArticleRowProps) {
   return (
     <Link
       href={`/artikelen/${article.slug}`}
-      className="flex items-center gap-4 px-4 py-3 hover:bg-muted/50 transition-colors"
+      className="relative flex items-center gap-4 px-4 py-3 hover:bg-muted/50 transition-colors"
     >
       <PinButton articleId={article.id} isPinned={article.is_pinned} />
 

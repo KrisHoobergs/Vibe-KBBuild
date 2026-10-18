@@ -84,6 +84,7 @@ export interface SearchResult {
   status: ArticleStatus;
   author_name: string;
   published_at: string | null;
+  updated_at: string;
   tags: { name: string; slug: string }[] | null;
   rank: number;
 }

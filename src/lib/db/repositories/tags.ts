@@ -56,6 +56,19 @@ export async function deleteTagById(id: string): Promise<void> {
   await getDb().deleteFrom("tags").where("id", "=", id).execute();
 }
 
+/** De tags van één artikel, op slug: zonder eerst het id van het artikel op te zoeken. */
+export async function tagsForArticleSlug(slug: string): Promise<Tag[]> {
+  const rijen = await getDb()
+    .selectFrom("article_tags")
+    .innerJoin("tags", "tags.id", "article_tags.tag_id")
+    .innerJoin("articles", "articles.id", "article_tags.article_id")
+    .select(KOLOMMEN)
+    .where("articles.slug", "=", slug)
+    .orderBy("tags.name")
+    .execute();
+  return rijen.map(naarTag);
+}
+
 /** Tags per artikel, voor een reeks artikelen in één query. */
 export async function tagsForArticles(articleIds: string[]): Promise<Map<string, Tag[]>> {
   const perArtikel = new Map<string, Tag[]>();

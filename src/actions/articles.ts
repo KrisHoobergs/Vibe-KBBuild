@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { getCurrentUser, NIET_INGELOGD } from "@/lib/auth";
+import { getCurrentUser, getIdentity, NIET_INGELOGD } from "@/lib/auth";
 import {
   deleteArticleById,
   getArticleWithRelations,
@@ -192,8 +192,11 @@ export async function getArticles(params?: {
 export async function getArticleBySlug(
   slug: string
 ): Promise<ArticleWithRelations | null> {
-  if (!(await getCurrentUser())) return null;
-  return getArticleWithRelations(slug);
+  // Eerst alleen de sessie (bij Supabase zonder databasevraag), daarna het
+  // profiel en het artikel tegelijk: één wachtronde minder per artikel.
+  if (!(await getIdentity())) return null;
+  const [user, artikel] = await Promise.all([getCurrentUser(), getArticleWithRelations(slug)]);
+  return user ? artikel : null;
 }
 
 export async function togglePinArticle(id: string): Promise<ActionResult> {

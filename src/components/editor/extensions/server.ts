@@ -11,42 +11,60 @@ import { ResizableImageServer } from "./resizable-image-server";
 const lowlight = createLowlight(common);
 
 /**
- * Extensielijst voor server-side generateHTML (mail, printweergave).
- * Moet inhoudelijk gelijk lopen met editorExtensions in ./index.ts, maar
- * zonder editor-only onderdelen (Placeholder, NodeViews). Codeblokken krijgen
- * inline styles zodat ze ook in e-mailclients zonder stylesheet leesbaar zijn.
+ * Extensielijst voor server-side generateHTML. Moet inhoudelijk gelijk lopen
+ * met editorExtensions in ./index.ts, maar zonder editor-only onderdelen
+ * (Placeholder, NodeViews).
  */
-export const serverExtensions = [
-  StarterKit.configure({
-    codeBlock: false, // CodeBlockLowlight hieronder
-    link: false, // Link hieronder
-    underline: false, // Underline hieronder
-  }),
-  ResizableImageServer.configure({
-    inline: false,
-    allowBase64: true,
-    HTMLAttributes: {
-      class: "rounded-md max-w-full",
-    },
-  }),
-  Link.configure({
-    openOnClick: false,
-    HTMLAttributes: {
-      class: "text-primary underline",
-    },
-  }),
-  Underline,
-  TextStyle,
-  Color,
-  Highlight.configure({
-    multicolor: true,
-  }),
-  CodeBlockLowlight.configure({
-    lowlight,
-    HTMLAttributes: {
-      class: "rounded-md bg-muted p-4 font-mono text-sm",
-      style:
-        "background-color: #f3f4f6; border-radius: 6px; padding: 16px; font-family: ui-monospace, monospace; font-size: 13px; overflow-x: auto;",
-    },
-  }),
-];
+function maakServerExtensions(opties: { codeblokStijl?: string; luieAfbeeldingen?: boolean } = {}) {
+  return [
+    StarterKit.configure({
+      codeBlock: false, // CodeBlockLowlight hieronder
+      link: false, // Link hieronder
+      underline: false, // Underline hieronder
+    }),
+    ResizableImageServer.configure({
+      inline: false,
+      allowBase64: true,
+      zoalsEditor: !!opties.luieAfbeeldingen,
+      HTMLAttributes: {
+        class: "rounded-md max-w-full",
+        // Pas laden als je in de buurt scrolt (niet voor afdrukken of mail).
+        ...(opties.luieAfbeeldingen ? { loading: "lazy", decoding: "async" } : {}),
+      },
+    }),
+    Link.configure({
+      openOnClick: false,
+      HTMLAttributes: {
+        class: "text-primary underline",
+      },
+    }),
+    Underline,
+    TextStyle,
+    Color,
+    Highlight.configure({
+      multicolor: true,
+    }),
+    CodeBlockLowlight.configure({
+      lowlight,
+      HTMLAttributes: {
+        class: "rounded-md bg-muted p-4 font-mono text-sm",
+        ...(opties.codeblokStijl ? { style: opties.codeblokStijl } : {}),
+      },
+    }),
+  ];
+}
+
+/**
+ * Voor mail en de printweergave: codeblokken krijgen inline styles, zodat ze
+ * ook in e-mailclients zonder stylesheet leesbaar zijn.
+ */
+export const serverExtensions = maakServerExtensions({
+  codeblokStijl:
+    "background-color: #f3f4f6; border-radius: 6px; padding: 16px; font-family: ui-monospace, monospace; font-size: 13px; overflow-x: auto;",
+});
+
+/**
+ * Voor de leesweergave in de app: zonder inline styles, zodat de kleuren van
+ * het thema (licht/donker) gelden.
+ */
+export const leesExtensions = maakServerExtensions({ luieAfbeeldingen: true });

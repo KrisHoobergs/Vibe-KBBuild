@@ -4,7 +4,7 @@ import nodemailer from "nodemailer";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, getIdentity } from "@/lib/auth";
 import {
   deleteMailSettingsRow,
   getMailSettingsRow,
@@ -39,7 +39,9 @@ const sendSchema = z.object({
 });
 
 export async function getMailSettingsStatus(): Promise<MailSettingsStatus> {
-  const userId = await getUserId();
+  // Alleen de sessie nodig, niet het profiel: zo loopt dit op de artikelpagina
+  // gelijk op met het ophalen van het artikel.
+  const userId = (await getIdentity())?.userId ?? null;
   if (!userId) return { configured: false, gmail_address: null };
 
   const data = await getMailSettingsRow(userId);

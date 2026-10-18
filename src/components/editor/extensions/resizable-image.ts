@@ -14,9 +14,11 @@ export const ResizableImage = Image.extend({
           return width ? parseInt(width, 10) || null : null;
         },
         renderHTML: (attributes) => {
-          if (!attributes.width) return {};
+          // Alleen een getal: de inhoud mag geen vrije CSS in de stijl zetten.
+          const breedte = Number(attributes.width);
+          if (!(breedte > 0)) return {};
           return {
-            style: `width: ${attributes.width}px; max-width: 100%;`,
+            style: `width: ${Math.round(breedte)}px; max-width: 100%;`,
           };
         },
       },

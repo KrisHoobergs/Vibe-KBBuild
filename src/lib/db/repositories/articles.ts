@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db";
 import { isUniqueViolation, parseJson, toIso } from "@/lib/db/dialect";
 import type { ArticlesTable, Database } from "@/lib/db/schema";
 import { naarProfile } from "@/lib/db/repositories/profiles";
-import { tagsForArticles } from "@/lib/db/repositories/tags";
+import { tagsForArticles, tagsForArticleSlug } from "@/lib/db/repositories/tags";
 import { slugify } from "@/lib/utils";
 import type {
   Article,
@@ -160,45 +160,84 @@ export async function listArticles(params: {
 
 export async function getArticleWithRelations(slug: string): Promise<ArticleWithRelations | null> {
   const db = getDb();
-  const rij = await db
-    .selectFrom("articles")
-    .select(ARTIKEL_KOLOMMEN)
-    .where("articles.slug", "=", slug)
-    .executeTakeFirst();
+  // Artikel met auteur en reviewer in één query (één momentopname), en de tags
+  // tegelijk op slug: één wachtronde naar de database in plaats van twee.
+  const [rij, tags] = await Promise.all([
+    db
+      .selectFrom("articles")
+      .innerJoin("profiles as au", "au.id", "articles.author_id")
+      .leftJoin("profiles as rv", "rv.id", "articles.reviewer_id")
+      .select([
+        ...ARTIKEL_KOLOMMEN,
+        "au.email as au_email",
+        "au.display_name as au_display_name",
+        "au.avatar_url as au_avatar_url",
+        "au.is_admin as au_is_admin",
+        "au.theme as au_theme",
+        "au.items_per_page as au_items_per_page",
+        "au.default_sort as au_default_sort",
+        "au.created_at as au_created_at",
+        "au.updated_at as au_updated_at",
+        "rv.id as rv_id",
+        "rv.email as rv_email",
+        "rv.display_name as rv_display_name",
+        "rv.avatar_url as rv_avatar_url",
+        "rv.is_admin as rv_is_admin",
+        "rv.theme as rv_theme",
+        "rv.items_per_page as rv_items_per_page",
+        "rv.default_sort as rv_default_sort",
+        "rv.created_at as rv_created_at",
+        "rv.updated_at as rv_updated_at",
+      ])
+      .where("articles.slug", "=", slug)
+      .executeTakeFirst(),
+    tagsForArticleSlug(slug),
+  ]);
   if (!rij) return null;
 
-  const article = naarArticle(rij);
-  const profielIds = [article.author_id, article.reviewer_id].filter((id): id is string => !!id);
-  const [profielen, tags] = await Promise.all([
-    db
-      .selectFrom("profiles")
-      .select([
-        "id",
-        "email",
-        "display_name",
-        "avatar_url",
-        "is_admin",
-        "theme",
-        "items_per_page",
-        "default_sort",
-        "created_at",
-        "updated_at",
-      ])
-      .where("id", "in", profielIds)
-      .execute(),
-    tagsForArticles([article.id]),
-  ]);
+  const author = naarProfile({
+    id: rij.author_id,
+    email: rij.au_email,
+    display_name: rij.au_display_name,
+    avatar_url: rij.au_avatar_url,
+    is_admin: rij.au_is_admin,
+    theme: rij.au_theme,
+    items_per_page: rij.au_items_per_page,
+    default_sort: rij.au_default_sort,
+    created_at: rij.au_created_at,
+    updated_at: rij.au_updated_at,
+  });
+  const reviewer =
+    rij.rv_id && rij.rv_email && rij.rv_display_name && rij.rv_theme && rij.rv_default_sort && rij.rv_created_at && rij.rv_updated_at
+      ? naarProfile({
+          id: rij.rv_id,
+          email: rij.rv_email,
+          display_name: rij.rv_display_name,
+          avatar_url: rij.rv_avatar_url,
+          is_admin: rij.rv_is_admin ?? false,
+          theme: rij.rv_theme,
+          items_per_page: rij.rv_items_per_page ?? 0,
+          default_sort: rij.rv_default_sort,
+          created_at: rij.rv_created_at,
+          updated_at: rij.rv_updated_at,
+        })
+      : null;
 
-  const perId = new Map(profielen.map((p) => [p.id, naarProfile(p)]));
-  const author = perId.get(article.author_id);
-  if (!author) return null;
+  return { ...naarArticle(rij), author, reviewer, tags };
+}
 
-  return {
-    ...article,
-    author,
-    reviewer: article.reviewer_id ? (perId.get(article.reviewer_id) ?? null) : null,
-    tags: tags.get(article.id) ?? [],
-  };
+/** Alleen de inhoud en de versie van een artikel (voor de afbeeldingsroute). */
+export async function getArticleContentById(
+  id: string
+): Promise<{ content: Record<string, unknown>; updated_at: string } | null> {
+  const rij = await getDb()
+    .selectFrom("articles")
+    .select(["articles.content", "articles.updated_at"])
+    .where("articles.id", "=", id)
+    .executeTakeFirst();
+  return rij
+    ? { content: parseJson<Record<string, unknown>>(rij.content, {}), updated_at: toIso(rij.updated_at) }
+    : null;
 }
 
 // ---------------------------------------------------------------- schrijven

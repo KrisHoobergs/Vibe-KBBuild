@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { generateHTML } from "@tiptap/html/server";
 import { getArticleBySlug } from "@/actions/articles";
 import { serverExtensions } from "@/components/editor/extensions/server";
+import { metSlotBreak } from "@/lib/artikel-html";
 import { PrintToolbar } from "@/components/articles/print-toolbar";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
@@ -32,7 +33,7 @@ export default async function ArticlePrintPage({ params }: Props) {
   if (hasContent) {
     try {
       contentHtml = generateHTML(
-        article.content as Parameters<typeof generateHTML>[0],
+        metSlotBreak(article.content as Parameters<typeof generateHTML>[0]),
         serverExtensions
       );
     } catch {
