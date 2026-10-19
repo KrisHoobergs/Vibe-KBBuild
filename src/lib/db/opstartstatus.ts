@@ -49,8 +49,10 @@ function isTediousFout(f: unknown): boolean {
 /**
  * Wist uit een tedious-melding wat de algemene regels niet vangen: de
  * servernaam zonder punten (sqlsrv01), host\INSTANTIE, de gebruiker bij een
- * mislukte aanmelding, de database bij fout 4060 en de namen in een
- * certificaatfout.
+ * mislukte aanmelding, database- en servernamen tussen aanhalingstekens
+ * (4060 `Cannot open database "x"`, 262 `… in database 'x'`, 229, Azure 40613
+ * `Database 'x' on server 'y'`, 40615/40532 `Cannot open server 'y'`) en de
+ * namen in een certificaatfout.
  */
 function ontsmetTedious(tekst: string): string {
   return tekst
@@ -59,7 +61,10 @@ function ontsmetTedious(tekst: string): string {
     .replace(/Failed to get response from SQL Server Browser on \S+/g, "Failed to get response from SQL Server Browser on [server]")
     .replace(/Port for \S+ not found in \S+/g, "Port for [instantie] not found in [server]")
     .replace(/Login failed for user '[^']*'/g, "Login failed for user '[gebruiker]'")
-    .replace(/Cannot open database "[^"]*"/g, 'Cannot open database "[database]"')
+    .replace(
+      /\b(database|server) ('[^']*'|"[^"]*")/gi,
+      (_, woord: string, naam: string) => `${woord} ${naam[0]}[${woord.toLowerCase()}]${naam[0]}`
+    )
     .replace(/\b(connect|getaddrinfo) (E[A-Z_]+) \S+/g, "$1 $2 [server]")
     .replace(/\b(Host|IP): \S+ (is not (?:in the cert's (?:altnames|list)|cert's CN)):.*/g, "$1: [server] $2: [certificaat]")
     .replace(/\b[\w.-]+\\[\w$]+\b/g, "[server]");

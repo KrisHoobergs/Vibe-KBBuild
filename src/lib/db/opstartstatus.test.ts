@@ -185,6 +185,42 @@ describe("veiligeFoutmelding: SQL Server (tedious)", () => {
       'Error (code ELOGIN): Cannot open database "[database]" requested by the login. The login failed.',
     ],
     [
+      "geen recht om tabellen te maken (262, app-login zonder db_ddladmin)",
+      serverfout(262, "CREATE TABLE permission denied in database 'kennisbank'."),
+      "Error (code EREQUEST, nr 262): CREATE TABLE permission denied in database '[database]'.",
+    ],
+    [
+      "geen recht op een object (229)",
+      serverfout(229, "The SELECT permission was denied on the object 'articles', database 'kennisbank', schema 'dbo'."),
+      "Error (code EREQUEST, nr 229): The SELECT permission was denied on the object 'articles', database '[database]', schema 'dbo'.",
+    ],
+    [
+      "Azure SQL even niet beschikbaar (40613)",
+      verbindingsfout(
+        "ELOGIN",
+        "Database 'kennisbank' on server 'mijnserver' is not currently available.  Please retry the connection later."
+      ),
+      "Error (code ELOGIN): Database '[database]' on server '[server]' is not currently available.  Please retry the connection later.",
+    ],
+    [
+      "Azure SQL-firewall (40615)",
+      verbindingsfout(
+        "ELOGIN",
+        "Cannot open server 'mijnserver' requested by the login. Client with IP address '203.0.113.7' is not allowed to access the server."
+      ),
+      "Error (code ELOGIN): Cannot open server '[server]' requested by the login. Client with IP address '[ip]' is not allowed to access the server.",
+    ],
+    [
+      "Azure SQL, server tussen dubbele aanhalingstekens (40532)",
+      verbindingsfout("ELOGIN", 'Cannot open server "mijnserver" requested by the login. The login failed.'),
+      'Error (code ELOGIN): Cannot open server "[server]" requested by the login. The login failed.',
+    ],
+    [
+      "database in herstel (922)",
+      serverfout(922, "Database 'kennisbank' is being recovered. Waiting until recovery is finished."),
+      "Error (code EREQUEST, nr 922): Database '[database]' is being recovered. Waiting until recovery is finished.",
+    ],
+    [
       "certificaat op een andere naam",
       verbindingsfout(
         "ESOCKET",
@@ -259,13 +295,17 @@ describe("veiligeFoutmelding: SQL Server (tedious)", () => {
     assert.equal(veiligeFoutmelding([]), "Error");
   });
 
-  it("lekt geen server, gebruiker of instantie", () => {
-    const geheimen = ["sqlsrv01", "SQLEXPRESS", "kb_geheime_gebruiker", "10.1.2.3"];
+  it("lekt geen server, gebruiker, instantie of database", () => {
+    const geheimen = ["sqlsrv01", "SQLEXPRESS", "kb_geheime_gebruiker", "10.1.2.3", "kb_geheime_db"];
     const fouten = [
       verbindingsfout("ELOGIN", "Login failed for user 'kb_geheime_gebruiker'."),
       verbindingsfout("ESOCKET", "Failed to connect to sqlsrv01\\SQLEXPRESS - connect ETIMEDOUT 10.1.2.3:1433"),
       verbindingsfout("ETIMEOUT", "Failed to connect to sqlsrv01:1433 (redirected from sqlsrv01:1433) in 15000ms"),
       verbindingsfout("EINSTLOOKUP", "Port for SQLEXPRESS not found in sqlsrv01"),
+      verbindingsfout("ELOGIN", 'Cannot open database "kb_geheime_db" requested by the login. The login failed.'),
+      serverfout(262, "CREATE TABLE permission denied in database 'kb_geheime_db'."),
+      verbindingsfout("ELOGIN", "Database 'kb_geheime_db' on server 'sqlsrv01' is not currently available."),
+      verbindingsfout("ELOGIN", "Cannot open server 'sqlsrv01' requested by the login."),
     ];
     for (const fout of fouten) {
       const melding = veiligeFoutmelding(fout);
