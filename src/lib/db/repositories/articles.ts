@@ -1,8 +1,9 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import type { Kysely, Selectable, Transaction } from "kysely";
+import { getConfig } from "@/lib/config";
 import { getDb } from "@/lib/db";
-import { isUniqueViolation, parseJson, toIso } from "@/lib/db/dialect";
+import { isMssqlDeadlock, isUniqueViolation, parseJson, toIso } from "@/lib/db/dialect";
 import type { ArticlesTable, Database } from "@/lib/db/schema";
 import { naarProfile } from "@/lib/db/repositories/profiles";
 import { tagsForArticles, tagsForArticleSlug } from "@/lib/db/repositories/tags";
@@ -298,6 +299,15 @@ export async function insertArticle(
   authorId: string
 ): Promise<Article> {
   // Bij een gelijktijdige insert met dezelfde slug: opnieuw proberen.
+  // Postgres: ongewijzigd, hooguit 3 pogingen zonder pauze. SQL Server: hooguit
+  // 8, telkens na een willekeurige pauze die per poging verdubbelt (tot 20 ms,
+  // 40 ms, …), zodat gelijktijdige pogingen niet steeds opnieuw dezelfde slug
+  // kiezen. Gemeten met 20 keer 10 tegelijk (npm run db:test:mssql): met 3
+  // pogingen zonder pauze mislukten er tot 46 van de 200; nu waren er hooguit
+  // 6 pogingen nodig, ook met READ_COMMITTED_SNAPSHOT aan. (Vergrendelen met
+  // UPDLOCK/HOLDLOCK in vrijeSlug gaf juist veel deadlocks.)
+  const mssql = getConfig().db.dialect === "mssql";
+  const maxPogingen = mssql ? 8 : 3;
   for (let poging = 1; ; poging++) {
     try {
       return await getDb()
@@ -325,7 +335,13 @@ export async function insertArticle(
           return (await haalArtikel(trx, id))!;
         });
     } catch (err) {
-      if (poging < 3 && isUniqueViolation(err)) continue;
+      // SQL Server kan een van twee gelijktijdige inserts ook als
+      // deadlockslachtoffer (1205) afbreken; dan eveneens opnieuw. Op Postgres
+      // verandert er niets (isMssqlDeadlock is daar altijd false).
+      if (poging < maxPogingen && (isUniqueViolation(err) || isMssqlDeadlock(err))) {
+        if (mssql) await new Promise((r) => setTimeout(r, Math.random() * 10 * 2 ** poging));
+        continue;
+      }
       throw err;
     }
   }
@@ -388,6 +404,15 @@ export async function setArticleStatus(
   return Number(resultaat.numUpdatedRows) > 0;
 }
 
+/**
+ * updated_at bij pinnen en herordenen. Postgres heeft daarvoor de trigger
+ * articles_updated_at (die elke UPDATE overschrijft); daar blijft de SQL-tekst
+ * dus ongewijzigd. SQL Server heeft geen triggers: daar zet de app het zelf.
+ */
+function updatedAtZonderTrigger(): { updated_at?: Date } {
+  return getConfig().db.dialect === "mssql" ? { updated_at: new Date() } : {};
+}
+
 /** Pin aan/uit. Bij aanzetten komt het artikel achteraan de gepinde lijst. */
 export async function togglePin(id: string): Promise<boolean> {
   return getDb()
@@ -412,7 +437,7 @@ export async function togglePin(id: string): Promise<boolean> {
 
       await trx
         .updateTable("articles")
-        .set({ is_pinned: !artikel.is_pinned, pin_order: pinOrder })
+        .set({ is_pinned: !artikel.is_pinned, pin_order: pinOrder, ...updatedAtZonderTrigger() })
         .where("id", "=", id)
         .execute();
       return true;
@@ -424,7 +449,11 @@ export async function reorderPinned(orderedIds: string[]): Promise<void> {
     .transaction()
     .execute(async (trx) => {
       for (let i = 0; i < orderedIds.length; i++) {
-        await trx.updateTable("articles").set({ pin_order: i }).where("id", "=", orderedIds[i]).execute();
+        await trx
+          .updateTable("articles")
+          .set({ pin_order: i, ...updatedAtZonderTrigger() })
+          .where("id", "=", orderedIds[i])
+          .execute();
       }
     });
 }
