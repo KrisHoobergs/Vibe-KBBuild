@@ -42,6 +42,8 @@ services:
 
   # Bij elke start één keer: database en app-login aanmaken of bijwerken
   # (idempotent). De app krijgt alleen rechten in zijn eigen database.
+  # Tot 10 pogingen: vlak na de allereerste start antwoordt SQL Server al
+  # (gezond), maar is hij nog bezig met inrichten (dan soms deadlock 1205).
   db-init:
     image: kennisbank-mssql:2025-fts
     pull_policy: never               # lokaal gebouwd door de dienst db
@@ -59,9 +61,13 @@ services:
       - >-
         case "$$MSSQL_APP_PASSWORD" in *\'*|*\"*)
         echo "MSSQL_APP_PASSWORD mag geen ' of \" bevatten"; exit 1;; esac;
+        for poging in 1 2 3 4 5 6 7 8 9 10; do
         /opt/mssql-tools18/bin/sqlcmd -C -S db -U sa -P "$$MSSQL_SA_PASSWORD" -b
         -i /init/kennisbank.sql
         -v DB=kennisbank APPLOGIN=kennisbank APPWACHTWOORD="$$MSSQL_APP_PASSWORD"
+        && exit 0;
+        echo "Poging $$poging mislukt; opnieuw over 5 s"; sleep 5;
+        done; exit 1
 
   app:
     build: .

@@ -192,9 +192,17 @@ jobs:
       - name: Testdatabase en testlogin (zelfde script als voor een eigen server)
         run: |
           docker cp scripts/mssql/testdatabase.sql mssql:/tmp/testdatabase.sql
-          sqlcmd-sa -b -i /tmp/testdatabase.sql \
-            -v TESTDATABASE="$MSSQL_TEST_DATABASE" TESTLOGIN="$MSSQL_TEST_USER" TESTWACHTWOORD="$MSSQL_TEST_PASSWORD" \
-               COLLATIE=Latin1_General_100_CI_AS_SC_UTF8 RCSI=${{ matrix.rcsi }}
+          # Idempotent; enkele pogingen, want vlak na de eerste start kan SQL Server
+          # nog bezig zijn met inrichten (deadlock 1205 bij CREATE/ALTER DATABASE).
+          for poging in 1 2 3 4 5; do
+            if sqlcmd-sa -b -i /tmp/testdatabase.sql \
+                 -v TESTDATABASE="$MSSQL_TEST_DATABASE" TESTLOGIN="$MSSQL_TEST_USER" TESTWACHTWOORD="$MSSQL_TEST_PASSWORD" \
+                    COLLATIE=Latin1_General_100_CI_AS_SC_UTF8 RCSI=${{ matrix.rcsi }}; then
+              exit 0
+            fi
+            echo "Poging $poging mislukt; opnieuw over 5 s"; sleep 5
+          done
+          exit 1
 
       - name: Unittests (zonder database)
         run: npm run test:unit
