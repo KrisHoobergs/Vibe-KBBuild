@@ -50,7 +50,11 @@ const opties = {
     },
   },
 };
-const auth = betterAuth(opties);
+// Pas NA het leegmaken en migreren aanmaken (in de eerste stap): Better Auth
+// controleert het schema bij het opstarten op de achtergrond en onthoudt een
+// "tabellen ontbreken" tot de volgende migratie via Better Auth zelf.
+const maakAuth = () => betterAuth(opties);
+let auth: ReturnType<typeof maakAuth>;
 
 const DAG_MS = 24 * 60 * 60 * 1000;
 const BROWSER = { "user-agent": "test-login-mssql/1.0", "x-forwarded-for": "10.0.0.7" };
@@ -109,6 +113,7 @@ try {
     await maakMssqlTestdatabaseLeeg(db);
     const uitgevoerd = await voerMigratiesUit(() => {});
     assert.ok(uitgevoerd.includes("0002_auth"), uitgevoerd.join(", "));
+    auth = maakAuth();
   });
 
   await stap("Better Auth: getMigrations meldt niets te maken of toe te voegen", async () => {

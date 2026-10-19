@@ -91,7 +91,8 @@ jobs:
             rcsi: "ON"
             fulltext: "1"
             # Op SQL Server 2022 (Linux) geeft de Nederlandse stemmer geen vervoegingen
-            # (FORMSOF(INFLECTIONAL, "artikelen") = alleen artikelen): zoeken vindt dan alleen het woord zelf.
+            # (FORMSOF(INFLECTIONAL, …) voor lopen, rood, artikelen = alleen het woord zelf;
+            # samenstellingen splitsen werkt wel): zoeken vindt dan alleen het woord zelf.
             stemmer: "0"
           - naam: 2025 zonder full-text (LIKE)
             runner: ubuntu-24.04
