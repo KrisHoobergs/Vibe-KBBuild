@@ -1,10 +1,13 @@
 import { Kysely, PostgresDialect } from "kysely";
 import pg from "pg";
 import type { DbConfig, PostgresDbConfig } from "@/lib/config";
+import { maakMssqlDialect } from "./mssql-dialect";
+import { mssqlPlugins } from "./mssql-bewaker";
 import type { Database } from "./schema";
 
 // Bouwt de Kysely-instantie voor een configuratie. Geen "server-only" hier: ook
-// de scripts in scripts/ maken zo hun verbinding.
+// de scripts in scripts/ maken zo hun verbinding. SQL Server: de driver
+// (tedious) wordt pas bij de eerste query geladen (mssql-dialect.ts).
 
 // COUNT(*) en andere int8-waarden komen standaard als string uit pg; de app
 // telt alleen kleine aantallen, dus een gewone number volstaat.
@@ -15,7 +18,12 @@ const pgTypes = {
   },
 };
 
-export type PoolOpties = { verbindingsTimeoutMs?: number; idleTimeoutMs?: number };
+export type PoolOpties = {
+  verbindingsTimeoutMs?: number;
+  idleTimeoutMs?: number;
+  /** Alleen SQL Server: maximale duur van één query (standaard 60 s). */
+  requestTimeoutMs?: number;
+};
 
 export function maakPostgresPool(config: PostgresDbConfig, opties: PoolOpties = {}) {
   const pool = new pg.Pool({
@@ -41,9 +49,10 @@ export function maakPostgresPool(config: PostgresDbConfig, opties: PoolOpties = 
 export function maakKysely(
   config: DbConfig,
   opties: PoolOpties = {}
-): { db: Kysely<Database>; pool: pg.Pool } {
-  // TIJDELIJK (fase 3): de SQL Server-verbinding komt in de volgende stap.
-  if (config.dialect === "mssql") throw new Error("SQL Server-verbinding volgt in een volgende stap");
+): { db: Kysely<Database>; pgPool?: pg.Pool } {
+  if (config.dialect === "mssql") {
+    return { db: new Kysely<Database>({ dialect: maakMssqlDialect(config, opties), plugins: mssqlPlugins() }) };
+  }
   const pool = maakPostgresPool(config, opties);
-  return { db: new Kysely<Database>({ dialect: new PostgresDialect({ pool }) }), pool };
+  return { db: new Kysely<Database>({ dialect: new PostgresDialect({ pool }) }), pgPool: pool };
 }
