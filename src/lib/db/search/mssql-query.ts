@@ -8,6 +8,11 @@
 //   ! & | ( ) <           → scheidingstekens, net als bij Postgres
 //   geen prefix (*), geen NEAR: websearch_to_tsquery kent die ook niet
 //
+// Eén uitzondering op "geen prefix": op SQL Server 2016–2022 geeft de
+// Nederlandse stemmer geen andere woordvormen (zie heeftOudeStemmer). Daar
+// zoekt de app zelf ook op het begin van de ruwe stam (stamPrefix), zodat
+// `artikelen` toch `artikel` vindt. De gebruiker kan zelf geen * opgeven.
+//
 // Nederlandse stopwoorden (dezelfde lijst als Postgres' 'dutch') vallen weg,
 // behalve binnen een frase van meerdere woorden. De full-text index gebruikt
 // STOPLIST OFF, dus SQL Server kent zelf geen ruiswoorden: een query met alleen
@@ -177,18 +182,55 @@ export function parseZoekvraag(invoer: string): ZoekGroep[] {
   return uit;
 }
 
+/** Vanaf deze hoofdversie (SQL Server 2025) geeft de Nederlandse stemmer andere woordvormen. */
+export const HOOFDVERSIE_MET_VERVOEGINGEN = 17;
+
+/**
+ * SQL Server 2016–2022 (hoofdversie 13–16): in CI (SQL Server 2022 op Linux)
+ * gaf FORMSOF(INFLECTIONAL, …) daar alleen het woord zelf terug (lopen,
+ * artikelen, rood); samenstellingen splitsen en accentongevoelig zoeken werkten
+ * wel. SQL Server 2025 geeft wel vervoegingen. Onbekend (null): geen oude stemmer.
+ */
+export function heeftOudeStemmer(hoofdversie: number | null | undefined): boolean {
+  return typeof hoofdversie === "number" && hoofdversie < HOOFDVERSIE_MET_VERVOEGINGEN;
+}
+
+export type ContainsOpties = {
+  /**
+   * Op SQL Server 2016–2022: elk woord (alleen letters, minstens 4) vindt ook
+   * woorden die met zijn ruwe stam beginnen: (FORMSOF(…, "artikelen") OR "artikel*").
+   * Nooit voor frases of uitsluitingen.
+   */
+  stamPrefix?: boolean;
+};
+
+/** Woorden en stammen korter dan dit krijgen geen stamprefix (te veel treffers). */
+export const MIN_STAMPREFIX = 4;
+
+function stamVoorPrefix(t: ZoekTerm): string | null {
+  if (!t.vervoegbaar || t.negatief) return null;
+  const woord = t.woorden[0];
+  if (woord.length < MIN_STAMPREFIX) return null;
+  const stam = ruweStam(woord);
+  return stam.length >= MIN_STAMPREFIX ? stam : null;
+}
+
 /** Eén term in CONTAINS-syntax. Binnen "…" staan nooit " of * (zie NIET_TOEGESTAAN). */
-export function termNaarContains(t: ZoekTerm): string {
+export function termNaarContains(t: ZoekTerm, opties: ContainsOpties = {}): string {
   const kern = `"${t.woorden.join(" ")}"`;
-  return t.vervoegbaar ? `FORMSOF(INFLECTIONAL, ${kern})` : kern;
+  if (!t.vervoegbaar) return kern;
+  const vormen = `FORMSOF(INFLECTIONAL, ${kern})`;
+  // ruweStam bevat alleen letters (het woord is vervoegbaar), dus nooit " of *.
+  const stam = opties.stamPrefix ? stamVoorPrefix(t) : null;
+  return stam ? `(${vormen} OR "${stam}*")` : vormen;
 }
 
 /** De zoekvoorwaarde (filter): OR van groepen, binnen een groep AND / AND NOT. */
-export function naarContains(groepen: ZoekGroep[]): string | null {
+export function naarContains(groepen: ZoekGroep[], opties: ContainsOpties = {}): string | null {
   if (groepen.length === 0) return null;
   const delen = groepen.map((g) => {
-    const positief = g.filter((t) => !t.negatief).map(termNaarContains);
-    const negatief = g.filter((t) => t.negatief).map((t) => `AND NOT ${termNaarContains(t)}`);
+    const positief = g.filter((t) => !t.negatief).map((t) => termNaarContains(t, opties));
+    const negatief = g.filter((t) => t.negatief).map((t) => `AND NOT ${termNaarContains(t, opties)}`);
     return [positief.join(" AND "), ...negatief].join(" ");
   });
   return delen.length === 1 ? delen[0] : delen.map((d) => `(${d})`).join(" OR ");
@@ -198,10 +240,10 @@ export function naarContains(groepen: ZoekGroep[]): string | null {
  * Voorwaarde voor de bonus op titel en excerpt: elke positieve term telt
  * (OR), zodat ook een titel met maar één van de zoekwoorden hoger komt.
  */
-export function naarBonus(groepen: ZoekGroep[]): string | null {
+export function naarBonus(groepen: ZoekGroep[], opties: ContainsOpties = {}): string | null {
   const termen = new Map<string, string>();
   for (const g of groepen) {
-    for (const t of g) if (!t.negatief) termen.set(sleutel(t), termNaarContains(t));
+    for (const t of g) if (!t.negatief) termen.set(sleutel(t), termNaarContains(t, opties));
   }
   return termen.size ? [...termen.values()].join(" OR ") : null;
 }
@@ -214,10 +256,11 @@ export function escapeLike(s: string): string {
 }
 
 /**
- * Heel ruwe Nederlandse stam, alleen voor de LIKE-terugval (zonder full-text
- * is er geen stemmer): meervoud op -en/-s eraf, verdubbelde medeklinker terug
- * ("pakketten" → "pakket"). Omdat LIKE op een deel van een woord zoekt, vindt
- * "artikel" dan ook "artikelen".
+ * Heel ruwe Nederlandse stam, voor de LIKE-terugval (zonder full-text is er
+ * geen stemmer) en voor het stamprefix op SQL Server 2016–2022 (de stemmer
+ * daar geeft geen woordvormen): meervoud op -en/-s eraf, verdubbelde
+ * medeklinker terug ("pakketten" → "pakket"). Omdat LIKE (en "stam*") op het
+ * begin of een deel van een woord zoekt, vindt "artikel" dan ook "artikelen".
  */
 export function ruweStam(woord: string): string {
   const w = woord.toLowerCase();

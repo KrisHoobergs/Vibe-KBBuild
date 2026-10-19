@@ -2,7 +2,9 @@
 //
 // - Full-text (CONTAINSTABLE) als dbo.articles een actieve full-text-index
 //   heeft (migratie 0005_fulltext, alleen met Full-Text Search op de server):
-//   Nederlandse vervoegingen, accentongevoelig.
+//   accentongevoelig, met Nederlandse vervoegingen vanaf SQL Server 2025. Op
+//   2016–2022 geeft de stemmer geen woordvormen; daar zoekt elk woord ook op
+//   het begin van zijn ruwe stam ("artikel*"), zie heeftOudeStemmer.
 // - Anders een eenvoudige LIKE-zoekopdracht per woord, hoofdletter- en
 //   accentongevoelig, met een ruwe stam (-en/-s). Ook na een full-text-fout.
 //
@@ -12,14 +14,23 @@
 import { sql, type Kysely, type RawBuilder } from "kysely";
 import { foutNummers } from "@/lib/db/dialect";
 import type { Database } from "@/lib/db/schema";
-import { naarBonus, naarContains, naarLike, parseZoekvraag, type LikePlan } from "./mssql-query";
+import {
+  heeftOudeStemmer,
+  naarBonus,
+  naarContains,
+  naarLike,
+  parseZoekvraag,
+  type ContainsOpties,
+  type LikePlan,
+} from "./mssql-query";
 import type { ZoekParams, ZoekRij } from "./types";
 
 type Db = Kysely<Database>;
 
 /** Hoe lang de uitkomst van "is er een full-text-index?" (of "full-text even uit") geldt. */
 const FULLTEXT_CONTROLE_MS = 5 * 60_000;
-let fulltextStatus: { actief: boolean; tot: number } | undefined;
+type FulltextStatus = { actief: boolean; opties: ContainsOpties; tot: number };
+let fulltextStatus: FulltextStatus | undefined;
 
 /** Vergeet de bewaarde full-text-status (voor tests). */
 export function resetFulltextStatus(): void {
@@ -27,17 +38,22 @@ export function resetFulltextStatus(): void {
 }
 
 // Per proces 5 minuten bewaard: een index die later bijkomt (full-text achteraf
-// geïnstalleerd, daarna db:migrate) wordt zo zonder herstart opgepikt. Mislukt
-// de controle zelf, dan mislukt de zoekvraag (de database is dan onbereikbaar)
-// en wordt er niets bewaard.
-async function heeftFulltextIndex(db: Db): Promise<boolean> {
-  if (fulltextStatus && fulltextStatus.tot > Date.now()) return fulltextStatus.actief;
-  const { rows } = await sql<{ actief: number | null }>`
-    SELECT CAST(OBJECTPROPERTYEX(OBJECT_ID(N'dbo.articles'), 'TableHasActiveFulltextIndex') AS int) AS actief
+// geïnstalleerd, daarna db:migrate) wordt zo zonder herstart opgepikt. In
+// dezelfde query de hoofdversie: op 2016–2022 krijgt elk woord een stamprefix.
+// Mislukt de controle zelf, dan mislukt de zoekvraag (de database is dan
+// onbereikbaar) en wordt er niets bewaard.
+async function leesFulltextStatus(db: Db): Promise<FulltextStatus> {
+  if (fulltextStatus && fulltextStatus.tot > Date.now()) return fulltextStatus;
+  const { rows } = await sql<{ actief: number | null; hoofdversie: number | null }>`
+    SELECT CAST(OBJECTPROPERTYEX(OBJECT_ID(N'dbo.articles'), 'TableHasActiveFulltextIndex') AS int) AS actief,
+           CAST(SERVERPROPERTY('ProductMajorVersion') AS int) AS hoofdversie
   `.execute(db);
-  const actief = rows[0]?.actief === 1;
-  fulltextStatus = { actief, tot: Date.now() + FULLTEXT_CONTROLE_MS };
-  return actief;
+  fulltextStatus = {
+    actief: rows[0]?.actief === 1,
+    opties: { stamPrefix: heeftOudeStemmer(rows[0]?.hoofdversie) },
+    tot: Date.now() + FULLTEXT_CONTROLE_MS,
+  };
+  return fulltextStatus;
 }
 
 // 7600–7699 en 30000–30099 zijn full-text-fouten, o.a. 7601 (geen index),
@@ -144,7 +160,9 @@ async function zoekMetLike(db: Db, v: Vraag, plan: LikePlan): Promise<ZoekRij[]>
  * Zoeken op SQL Server. Bewuste verschillen met Postgres: een zoekvraag met
  * alleen uitsluitingen vindt niets; frases zijn exact; samengestelde woorden
  * worden gesplitst ("bank" vindt "kennisbank"); een net opgeslagen artikel is
- * pas na enkele seconden vindbaar (full-text); gelijke rang heeft een vaste volgorde.
+ * pas na enkele seconden vindbaar (full-text); gelijke rang heeft een vaste
+ * volgorde; op SQL Server 2016–2022 vindt een woord ook alle woorden die met
+ * zijn ruwe stam beginnen ("artikelen" vindt "artikel", maar ook "artikelsgewijs").
  */
 export async function zoekMssql(db: Db, params: ZoekParams): Promise<ZoekRij[]> {
   const groepen = parseZoekvraag(params.query);
@@ -159,15 +177,16 @@ export async function zoekMssql(db: Db, params: ZoekParams): Promise<ZoekRij[]> 
   // (fout 7645). Geen status: niets, zoals status = ANY('{}') in Postgres.
   if (groepen.length === 0 || v.statuses.length === 0) return [];
 
-  if (await heeftFulltextIndex(db)) {
+  const status = await leesFulltextStatus(db);
+  if (status.actief) {
     try {
-      return await zoekMetFulltext(db, v, naarContains(groepen)!, naarBonus(groepen)!);
+      return await zoekMetFulltext(db, v, naarContains(groepen, status.opties)!, naarBonus(groepen, status.opties)!);
     } catch (err) {
       const nummers = foutNummers(err).filter(isFulltextFout);
       if (nummers.length === 0) throw err;
       console.error(`[zoeken] full-text-fout ${nummers.join(", ")}, terugval op LIKE:`, err);
       if (!nummers.every((n) => VRAAGFOUTEN.has(n))) {
-        fulltextStatus = { actief: false, tot: Date.now() + FULLTEXT_CONTROLE_MS };
+        fulltextStatus = { ...status, actief: false, tot: Date.now() + FULLTEXT_CONTROLE_MS };
       }
     }
   }

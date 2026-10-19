@@ -17,7 +17,9 @@
  * Optioneel MSSQL_TEST_FULLTEXT_VERWACHT=1 of 0: controleert dat de zoekfunctie
  * wel of geen full-text-index heeft (CI-varianten). MSSQL_TEST_STEMMER_VERWACHT=0:
  * de Nederlandse stemmer van deze server geeft geen vervoegingen (SQL Server
- * 2022 in CI); artikel ↔ artikelen wordt dan niet gecontroleerd.
+ * 2022 in CI); de test eist dan dat het een server vóór 2025 is, zodat de app
+ * het stamprefix gebruikt. artikel ↔ artikelen wordt altijd gecontroleerd:
+ * met LIKE (ruwe stam), FORMSOF (2025) of het stamprefix (2016–2022).
  */
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -38,6 +40,7 @@ const artikelen = await import("../src/lib/db/repositories/articles");
 const tags = await import("../src/lib/db/repositories/tags");
 const herstel = await import("../src/lib/db/repositories/password-resets");
 const zoeken = await import("../src/lib/db/repositories/search");
+const { heeftOudeStemmer } = await import("../src/lib/db/search/mssql-query");
 const { databaseStorage } = await import("../src/lib/storage/database");
 
 const config = leesConfig();
@@ -293,13 +296,20 @@ try {
 
   // ------------------------------------------------ zoeken (FT-9 / FT-11)
   let fulltext = false;
+  let stamPrefix = false;
   await stap("zoeken: full-text-index of LIKE bepaald", async () => {
-    const { rows } = await sql<{ actief: number | null }>`
-      SELECT CAST(OBJECTPROPERTYEX(OBJECT_ID(N'dbo.articles'), 'TableHasActiveFulltextIndex') AS int) AS actief
+    const { rows } = await sql<{ actief: number | null; hoofdversie: number | null }>`
+      SELECT CAST(OBJECTPROPERTYEX(OBJECT_ID(N'dbo.articles'), 'TableHasActiveFulltextIndex') AS int) AS actief,
+             CAST(SERVERPROPERTY('ProductMajorVersion') AS int) AS hoofdversie
     `.execute(db);
     fulltext = rows[0]?.actief === 1;
-    console.log(`    zoeken via ${fulltext ? "full-text" : "LIKE (geen full-text-index)"}`);
+    stamPrefix = fulltext && heeftOudeStemmer(rows[0]?.hoofdversie);
+    console.log(
+      `    zoeken via ${fulltext ? `full-text${stamPrefix ? " met stamprefix (SQL Server vóór 2025)" : ""}` : "LIKE (geen full-text-index)"}`
+    );
     if (fulltextVerwacht !== undefined) assert.equal(fulltext, fulltextVerwacht === "1", "MSSQL_TEST_FULLTEXT_VERWACHT");
+    // Een stemmer zonder vervoegingen hoort bij 2016–2022: dan vangt het stamprefix het op.
+    if (fulltext && stemmerVerwacht === "0") assert.ok(stamPrefix, "MSSQL_TEST_STEMMER_VERWACHT=0 op SQL Server 2025 of nieuwer");
   });
 
   const corpus: Record<string, { id: string; slug: string }> = {};
@@ -349,16 +359,11 @@ try {
   });
 
   await stap("zoeken: vervoegingen (artikel ↔ artikelen), accenten (cafe → café, één → een)", async () => {
-    if (fulltext && stemmerVerwacht === "0") {
-      // Server met een Nederlandse stemmer zonder vervoegingen (SQL Server 2022 in CI):
-      // alleen het woord zelf moet gevonden worden.
-      console.log("    vervoegingen niet gecontroleerd (MSSQL_TEST_STEMMER_VERWACHT=0)");
-      bevat(await zoek(`${merk} artikelen`), "meervoud");
-      bevat(await zoek(`${merk} artikel`), "enkelvoud");
-    } else {
-      bevat(await zoek(`${merk} artikelen`), "enkelvoud", "meervoud");
-      bevat(await zoek(`${merk} artikel`), "enkelvoud", "meervoud");
-    }
+    // LIKE: ruwe stam; full-text op 2025: FORMSOF; op 2016–2022: het stamprefix
+    // ("artikel*"), want de stemmer daar geeft geen vervoegingen.
+    if (stamPrefix) console.log("    artikel ↔ artikelen via het stamprefix");
+    bevat(await zoek(`${merk} artikelen`), "enkelvoud", "meervoud");
+    bevat(await zoek(`${merk} artikel`), "enkelvoud", "meervoud");
     bevat(await zoek(`${merk} cafe`), "cafe");
     bevat(await zoek(`${merk} één`), "kat", "hond", "vis");
   });

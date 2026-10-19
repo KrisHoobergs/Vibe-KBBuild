@@ -58,9 +58,12 @@ const isFulltext = (q: CompiledQuery) => q.sql.includes("CONTAINSTABLE");
 const isLike = (q: CompiledQuery) => q.sql.includes(" LIKE ") && !isFulltext(q);
 const soort = (q: CompiledQuery) => (isControle(q) ? "controle" : isFulltext(q) ? "full-text" : isLike(q) ? "like" : "?");
 
-/** Antwoord van een server met (of zonder) full-text-index; zoekvragen geven niets. */
-const server = (index: boolean, zoek: Antwoord = () => []): Antwoord => (q) =>
-  isControle(q) ? [{ actief: index ? 1 : 0 }] : zoek(q);
+/**
+ * Antwoord van een server met (of zonder) full-text-index; zoekvragen geven
+ * niets. Standaard SQL Server 2025 (hoofdversie 17).
+ */
+const server = (index: boolean, zoek: Antwoord = () => [], hoofdversie: number | null = 17): Antwoord => (q) =>
+  isControle(q) ? [{ actief: index ? 1 : 0, hoofdversie }] : zoek(q);
 
 /** Een serverfout zoals Kysely-mssql ze geeft: een array van fouten met een nummer. */
 const serverfout = (...nummers: number[]) =>
@@ -112,11 +115,49 @@ describe("zoekMssql: keuze tussen full-text en LIKE", () => {
     assert.ok(!q.sql.includes("artikel") && !q.sql.includes("concept"));
   });
 
-  it("de controle op de index wordt 5 minuten bewaard", async () => {
+  it("de controle op de index (en de hoofdversie) wordt 5 minuten bewaard", async () => {
     const { db, log } = nepDb(server(true));
     await zoekMssql(db, basis);
     await zoekMssql(db, { ...basis, query: "scanner" });
     assert.deepEqual(log.map(soort), ["controle", "full-text", "full-text"]);
+    assert.match(log[0].sql, /SERVERPROPERTY\('ProductMajorVersion'\)/);
+  });
+
+  it("SQL Server 2016–2022 (hoofdversie < 17): elk woord ook op het begin van zijn ruwe stam", async () => {
+    for (const hoofdversie of [13, 16]) {
+      resetFulltextStatus();
+      const { db, log } = nepDb(server(true, () => [], hoofdversie));
+      await zoekMssql(db, { ...basis, query: 'artikelen kat -printers "exacte zin"' });
+      await zoekMssql(db, { ...basis, query: "printers" });
+      assert.deepEqual(log.map(soort), ["controle", "full-text", "full-text"]);
+      assert.equal(
+        log[1].parameters[0],
+        '(FORMSOF(INFLECTIONAL, "artikelen") OR "artikel*") AND FORMSOF(INFLECTIONAL, "kat") AND "exacte zin" AND NOT FORMSOF(INFLECTIONAL, "printers")'
+      );
+      assert.equal(
+        log[1].parameters[1],
+        '(FORMSOF(INFLECTIONAL, "artikelen") OR "artikel*") OR FORMSOF(INFLECTIONAL, "kat") OR "exacte zin"'
+      );
+      // Bewaard samen met de index: ook de tweede zoekvraag krijgt het prefix.
+      assert.equal(log[2].parameters[0], '(FORMSOF(INFLECTIONAL, "printers") OR "printer*")');
+    }
+  });
+
+  it("SQL Server 2025 of een onbekende versie: geen stamprefix", async () => {
+    for (const hoofdversie of [17, null]) {
+      resetFulltextStatus();
+      const { db, log } = nepDb(server(true, () => [], hoofdversie));
+      await zoekMssql(db, { ...basis, query: "artikelen" });
+      assert.equal(log[1].parameters[0], 'FORMSOF(INFLECTIONAL, "artikelen")');
+      assert.equal(log[1].parameters[1], 'FORMSOF(INFLECTIONAL, "artikelen")');
+    }
+  });
+
+  it("2016–2022 zonder full-text-index: LIKE met de ruwe stam, zoals voorheen", async () => {
+    const { db, log } = nepDb(server(false, () => [], 15));
+    await zoekMssql(db, { ...basis, query: "artikelen" });
+    assert.deepEqual(log.map(soort), ["controle", "like"]);
+    assert.ok(log[1].parameters.includes("%artikel%"));
   });
 
   it("full-text-fout (bv. 7609): terugval op LIKE en 5 minuten geen full-text", async () => {

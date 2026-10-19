@@ -9,6 +9,7 @@ import {
   MAX_TERMEN,
   NEDERLANDSE_STOPWOORDEN,
   escapeLike,
+  heeftOudeStemmer,
   naarBonus,
   naarContains,
   naarLike,
@@ -17,7 +18,10 @@ import {
 } from "./mssql-query";
 
 const F = (w: string) => `FORMSOF(INFLECTIONAL, "${w}")`;
+/** Met stamprefix (SQL Server 2016–2022): FORMSOF of het begin van de ruwe stam. */
+const FP = (w: string, stam: string) => `(${F(w)} OR "${stam}*")`;
 const contains = (q: string) => naarContains(parseZoekvraag(q));
+const metPrefix = (q: string) => naarContains(parseZoekvraag(q), { stamPrefix: true });
 
 describe("woorden, frases en AND", () => {
   it("één woord krijgt stemming", () => {
@@ -188,27 +192,96 @@ describe("limieten", () => {
   });
 });
 
-// Controle op de grammatica van CONTAINS, voor willekeurige invoer.
+// Controle op de grammatica van CONTAINS, voor willekeurige invoer. Positieve
+// woorden mogen met stamPrefix de vorm (FORMSOF(…) OR "stam*") hebben,
+// uitsluitingen nooit.
+const POS = String.raw`(?:FORMSOF\(INFLECTIONAL, "[^"*]+"\)|"[^"*]+"|\(FORMSOF\(INFLECTIONAL, "[^"*]+"\) OR "[^"*]+\*"\))`;
+const NEG = String.raw`(?:FORMSOF\(INFLECTIONAL, "[^"*]+"\)|"[^"*]+")`;
 function isGeldigeVoorwaarde(v: string): boolean {
-  const term = String.raw`(?:FORMSOF\(INFLECTIONAL, "[^"*]+"\)|"[^"*]+")`;
-  const groep = String.raw`${term}(?: AND ${term})*(?: AND NOT ${term})*`;
+  const groep = String.raw`${POS}(?: AND ${POS})*(?: AND NOT ${NEG})*`;
   return new RegExp(String.raw`^(?:${groep}|\(${groep}\)(?: OR \(${groep}\))+)$`).test(v);
+}
+function isGeldigeBonus(v: string): boolean {
+  return new RegExp(String.raw`^${POS}(?: OR ${POS})*$`).test(v);
 }
 
 describe("willekeurige invoer", () => {
-  it("geeft altijd null of een geldige voorwaarde", () => {
+  it("geeft altijd null of een geldige voorwaarde, met en zonder stamprefix", () => {
     const tekens = ['"', "-", " ", "  ", "or", "OR", "*", "(", ")", "!", "&", "|", "'", "#", "+", ".", "_", "%", "[", "]",
-      "kat", "hond", "de", "één", "c", "1", "😀", "́", "\t", "\n", ";", "\\", "/", ":", "@", "–"];
+      "kat", "hond", "de", "één", "c", "1", "😀", "́", "\t", "\n", ";", "\\", "/", ":", "@", "–",
+      "artikelen", "printers", "pakketten", "lopen", "huis"];
     let zaad = 42;
     const rnd = () => ((zaad = (zaad * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
     for (let n = 0; n < 5000; n++) {
       let q = "";
       const lengte = Math.floor(rnd() * 12);
       for (let k = 0; k < lengte; k++) q += tekens[Math.floor(rnd() * tekens.length)];
-      const v = contains(q);
-      if (v !== null) assert.ok(isGeldigeVoorwaarde(v), `${JSON.stringify(q)} → ${v}`);
-      const b = naarBonus(parseZoekvraag(q));
-      assert.equal(b === null, v === null, JSON.stringify(q));
+      const groepen = parseZoekvraag(q);
+      for (const opties of [{}, { stamPrefix: true }]) {
+        const v = naarContains(groepen, opties);
+        if (v !== null) assert.ok(isGeldigeVoorwaarde(v), `${JSON.stringify(q)} → ${v}`);
+        const b = naarBonus(groepen, opties);
+        assert.equal(b === null, v === null, JSON.stringify(q));
+        if (b !== null) assert.ok(isGeldigeBonus(b), `${JSON.stringify(q)} → ${b}`);
+      }
+      // Zonder stamprefix nooit een *.
+      assert.ok(!(naarContains(groepen) ?? "").includes("*"), JSON.stringify(q));
+    }
+  });
+});
+
+describe("stamprefix (SQL Server 2016–2022)", () => {
+  it("alleen vóór SQL Server 2025 (hoofdversie 17)", () => {
+    for (const v of [13, 14, 15, 16]) assert.equal(heeftOudeStemmer(v), true, String(v));
+    for (const v of [17, 18, null, undefined]) assert.equal(heeftOudeStemmer(v), false, String(v));
+  });
+  it("zonder de optie: ongewijzigd, geen *", () => {
+    assert.equal(contains("artikelen"), F("artikelen"));
+    assert.equal(naarContains(parseZoekvraag("artikelen"), { stamPrefix: false }), F("artikelen"));
+  });
+  it("een woord vindt ook het begin van zijn ruwe stam (artikelen ↔ artikel)", () => {
+    assert.equal(metPrefix("artikelen"), FP("artikelen", "artikel"));
+    assert.equal(metPrefix("artikel"), FP("artikel", "artikel"));
+    assert.equal(metPrefix("Printers"), FP("Printers", "printer"));
+    assert.equal(metPrefix("pakketten"), FP("pakketten", "pakket"));
+    assert.equal(metPrefix("printer installeren"), `${FP("printer", "printer")} AND ${FP("installeren", "installer")}`);
+  });
+  it("woorden en stammen korter dan 4 letters: alleen FORMSOF", () => {
+    assert.equal(metPrefix("kat"), F("kat"));
+    assert.equal(metPrefix("één"), F("één"));
+    // lopen → lop (3 letters), bussen → bus: te kort.
+    assert.equal(metPrefix("lopen"), F("lopen"));
+    assert.equal(metPrefix("bussen"), F("bussen"));
+    assert.equal(metPrefix("huis"), FP("huis", "huis"));
+  });
+  it("nooit voor frases, speciale termen of uitsluitingen", () => {
+    assert.equal(metPrefix('"exacte zin" artikelen'), `"exacte zin" AND ${FP("artikelen", "artikel")}`);
+    assert.equal(metPrefix("c# node.js e-mail"), '"c#" AND "node.js" AND "e-mail"');
+    assert.equal(metPrefix("printer -artikelen"), `${FP("printer", "printer")} AND NOT ${F("artikelen")}`);
+    assert.equal(metPrefix('printer -"oude printers"'), `${FP("printer", "printer")} AND NOT "oude printers"`);
+  });
+  it("or-groepen en de bonus", () => {
+    assert.equal(metPrefix("kat or honden"), `(${F("kat")}) OR (${FP("honden", "hond")})`);
+    assert.equal(
+      naarBonus(parseZoekvraag('printers -windows or scanner "nieuwe versie"'), { stamPrefix: true }),
+      `${FP("printers", "printer")} OR ${FP("scanner", "scanner")} OR "nieuwe versie"`
+    );
+  });
+  it("accenten blijven, hoofdletters niet in de stam", () => {
+    assert.equal(metPrefix("Ideeën café"), `${FP("Ideeën", "ideeën")} AND ${FP("café", "café")}`);
+  });
+  it("voorwaarde blijft onder 4000 tekens", () => {
+    const lang = [
+      "x".repeat(5000),
+      Array.from({ length: 400 }, (_, i) => `woordje${i}`).join(" "),
+      Array.from({ length: 60 }, () => "abcdefghijklmnopqrstuvwxyzen").join(" "),
+      Array.from({ length: 300 }, (_, i) => `artikelen${"x".repeat(i % 7)} or`).join(" "),
+      "artikelen ".repeat(600),
+    ];
+    for (const q of lang) {
+      const c = metPrefix(q) ?? "";
+      const b = naarBonus(parseZoekvraag(q), { stamPrefix: true }) ?? "";
+      assert.ok(c.length < 4000 && b.length < 4000, `${c.length} / ${b.length}`);
     }
   });
 });

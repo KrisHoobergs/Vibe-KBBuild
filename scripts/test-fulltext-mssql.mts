@@ -12,6 +12,9 @@
  *         met de woorden in verschillende kolommen niet, search_text wel
  *   FT-8  vertraging van CHANGE_TRACKING AUTO na een INSERT (gemiddelde en
  *         maximum) en na een UPDATE van alleen content_text
+ *   FT-10 stamprefix (zo zoekt de app op SQL Server 2016–2022): met
+ *         "artikel*" vinden artikel en artikelen elkaar op elke versie; toont
+ *         ook wat FORMSOF alleen op deze server vindt (geen sysadmin nodig)
  *   FT-11 zonder Full-Text Search: geen index, 0005_fulltext niet vastgelegd
  *
  *   npm run test:fulltext:mssql
@@ -24,7 +27,9 @@
  *
  * FT-2 eist vervoegingen (lopen, rood, artikel ↔ artikelen), behalve met
  * MSSQL_TEST_STEMMER_VERWACHT=0: dan worden de vormen alleen getoond (SQL
- * Server 2022 in CI: de stemmer geeft daar alleen het woord zelf terug).
+ * Server 2022 in CI: de stemmer geeft daar alleen het woord zelf terug; de app
+ * vangt dat op met het stamprefix, FT-10). FT-10 eist vervoegingen van FORMSOF
+ * alleen met MSSQL_TEST_STEMMER_VERWACHT=1.
  *
  * Weigert elke database die niet kb_test…/kennisbank_test… heet of de
  * markering kb_testdatabase mist (scripts/lib/mssql-testomgeving.mts). Voert
@@ -50,7 +55,7 @@ const { leesConfig } = await import("../src/lib/config");
 const { maakKysely } = await import("../src/lib/db/connection");
 const { foutNummers } = await import("../src/lib/db/dialect");
 const { voerMigratiesUit } = await import("../src/lib/db/auto-migrate");
-const { naarBonus, naarContains, parseZoekvraag } = await import("../src/lib/db/search/mssql-query");
+const { heeftOudeStemmer, naarBonus, naarContains, parseZoekvraag } = await import("../src/lib/db/search/mssql-query");
 
 const config = leesConfig();
 if (config.db.dialect !== "mssql") throw new Error("De testomgeving zette DB_DIALECT=mssql niet");
@@ -267,7 +272,7 @@ try {
       const { rows: catalogi } = await sql<{ n: number }>`SELECT COUNT(*) AS n FROM sys.fulltext_catalogs`.execute(db);
       assert.equal(catalogi[0]?.n, 0);
     });
-    for (const ft of ["FT-2", "FT-3", "FT-4", "FT-7", "FT-8"]) {
+    for (const ft of ["FT-2", "FT-3", "FT-4", "FT-7", "FT-10", "FT-8"]) {
       await stap(`${ft} (vraagt Full-Text Search)`, async () => "overgeslagen");
     }
   } else {
@@ -329,10 +334,13 @@ try {
       const voorwaarden = new Set<string>();
       for (const q of invoer) {
         const groepen = parseZoekvraag(q);
-        for (const v of [naarContains(groepen), naarBonus(groepen)]) {
-          if (v) {
-            assert.ok(v.length < 4000, `voorwaarde van ${v.length} tekens`);
-            voorwaarden.add(v);
+        // Ook met het stamprefix, zoals de app op SQL Server 2016–2022 zoekt.
+        for (const opties of [{}, { stamPrefix: true }]) {
+          for (const v of [naarContains(groepen, opties), naarBonus(groepen, opties)]) {
+            if (v) {
+              assert.ok(v.length < 4000, `voorwaarde van ${v.length} tekens`);
+              voorwaarden.add(v);
+            }
           }
         }
       }
@@ -372,6 +380,51 @@ try {
         JOIN dbo.articles AS a ON a."id" = ct.[KEY]
       `.execute(db);
       assert.deepEqual(samen.map((r) => r.id), [id]);
+    });
+
+    await stap('FT-10 stamprefix: artikel ↔ artikelen met "artikel*" (zo zoekt de app op 2016–2022)', async () => {
+      await maakAuteur();
+      const merk = uniekWoord();
+      const enkelvoud = await maakArtikel("stamprefix enkelvoud", null, `${merk} dit artikel gaat over iets`);
+      const meervoud = await maakArtikel("stamprefix meervoud", null, `${merk} alle artikelen samen`);
+      const beide = [enkelvoud, meervoud].sort();
+      const gevonden = async (q: string, stamPrefix: boolean) => {
+        const voorwaarde = naarContains(parseZoekvraag(q), { stamPrefix });
+        assert.ok(voorwaarde);
+        const { rows } = await sql<{ id: string }>`
+          SELECT a."id" FROM CONTAINSTABLE(dbo.articles, search_text, ${voorwaarde}, LANGUAGE 1043) AS ct
+          JOIN dbo.articles AS a ON a."id" = ct.[KEY]
+        `.execute(db);
+        return rows.map((r) => r.id).sort();
+      };
+      // Wachten tot de index de twee artikels kent.
+      const start = performance.now();
+      while ((await gevonden(merk, false)).length !== 2) {
+        if (performance.now() - start > 120_000) throw new Error("na 120 s nog niet vindbaar");
+        await wacht(100);
+      }
+      const prefix = naarContains(parseZoekvraag(`${merk} artikelen`), { stamPrefix: true }) ?? "";
+      assert.ok(prefix.includes('"artikel*"'), prefix);
+      assert.deepEqual(await gevonden(`${merk} artikelen`, true), beide, "artikelen met stamprefix");
+      assert.deepEqual(await gevonden(`${merk} artikel`, true), beide, "artikel met stamprefix");
+
+      // Alleen FORMSOF: wat de stemmer van DEZE server doet.
+      const meervoudVindt = await gevonden(`${merk} artikelen`, false);
+      const enkelvoudVindt = await gevonden(`${merk} artikel`, false);
+      const vindt = (r: string[], id: string) => (r.includes(id) ? "ook" : "NIET");
+      console.log(
+        `    SQL Server ${hoofdversie}, alleen FORMSOF: "artikelen" vindt ${vindt(meervoudVindt, enkelvoud)} "artikel", ` +
+          `"artikel" vindt ${vindt(enkelvoudVindt, meervoud)} "artikelen"; de app gebruikt hier ` +
+          `${heeftOudeStemmer(hoofdversie) ? "ook het stamprefix" : "alleen FORMSOF"}`
+      );
+      if (stemmerVerwacht === "1") {
+        assert.deepEqual(meervoudVindt, beide, "FORMSOF(artikelen) vindt artikel niet");
+        assert.deepEqual(enkelvoudVindt, beide, "FORMSOF(artikel) vindt artikelen niet");
+      }
+      // Geeft de stemmer van deze server zelf geen vervoegingen, dan moet de app het stamprefix gebruiken.
+      if (!meervoudVindt.includes(enkelvoud)) {
+        assert.ok(heeftOudeStemmer(hoofdversie), `SQL Server ${hoofdversie} geeft geen vervoegingen, maar de app gebruikt geen stamprefix`);
+      }
     });
 
     await stap(`FT-8 change tracking: ${METINGEN} keer INSERT tot vindbaar, daarna een UPDATE van content_text`, async () => {
