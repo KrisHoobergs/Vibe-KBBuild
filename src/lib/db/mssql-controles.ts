@@ -1,4 +1,5 @@
 import { sql, type Kysely } from "kysely";
+import { heeftOudeStemmer } from "./search/mssql-query";
 
 // Controles van een SQL Server-installatie: versie, serverinstellingen en
 // full-text. Gebruikt door de gezondheidscheck (/status, /api/gezondheid) en
@@ -63,10 +64,16 @@ export function beoordeelMssqlControles(c: MssqlControles): {
   if (c.rcsi === 0) {
     waarschuwingen.push("READ_COMMITTED_SNAPSHOT staat uit");
   }
+  // Vóór SQL Server 2025 geeft ook full-text geen vervoegingen (zie
+  // heeftOudeStemmer); daar belooft de waarschuwing ze dus niet.
+  const oudeStemmer = heeftOudeStemmer(c.hoofdversie);
+  const zonderFulltext = oudeStemmer ? "eenvoudig zoeken" : "zoeken zonder vervoegingen";
   if (c.fts !== 1) {
-    waarschuwingen.push("Full-text search is niet geïnstalleerd: zoeken zonder vervoegingen");
+    waarschuwingen.push(`Full-text search is niet geïnstalleerd: ${zonderFulltext}`);
   } else if (c.ftindex !== 1) {
-    waarschuwingen.push("Er is nog geen full-text-index: zoeken zonder vervoegingen (voer de migraties uit)");
+    waarschuwingen.push(`Er is nog geen full-text-index: ${zonderFulltext} (voer de migraties uit)`);
+  } else if (oudeStemmer) {
+    waarschuwingen.push("Zoeken kent op deze SQL Server-versie geen vervoegingen (pas vanaf SQL Server 2025)");
   }
   return { fataal, waarschuwingen, zoeken: c.ftindex === 1 ? "full-text" : "eenvoudig" };
 }

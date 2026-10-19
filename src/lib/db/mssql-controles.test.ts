@@ -53,6 +53,25 @@ describe("beoordeelMssqlControles", () => {
     });
   });
 
+  it("SQL Server 2016–2022 met full-text: werkt, maar zonder vervoegingen", () => {
+    for (const hoofdversie of [13, 16]) {
+      assert.deepEqual(beoordeelMssqlControles({ ...GOED, hoofdversie }), {
+        fataal: [],
+        waarschuwingen: ["Zoeken kent op deze SQL Server-versie geen vervoegingen (pas vanaf SQL Server 2025)"],
+        zoeken: "full-text",
+      });
+    }
+  });
+
+  it("SQL Server 2016–2022 zonder full-text: belooft geen vervoegingen", () => {
+    assert.deepEqual(beoordeelMssqlControles({ ...GOED, hoofdversie: 16, fts: 0, ftindex: null }).waarschuwingen, [
+      "Full-text search is niet geïnstalleerd: eenvoudig zoeken",
+    ]);
+    assert.deepEqual(beoordeelMssqlControles({ ...GOED, hoofdversie: 15, ftindex: 0 }).waarschuwingen, [
+      "Er is nog geen full-text-index: eenvoudig zoeken (voer de migraties uit)",
+    ]);
+  });
+
   it("READ_COMMITTED_SNAPSHOT uit is een waarschuwing, geen fout", () => {
     const r = beoordeelMssqlControles({ ...GOED, rcsi: 0 });
     assert.deepEqual(r.fataal, []);
@@ -70,5 +89,8 @@ describe("beoordeelMssqlControles", () => {
     const tekst = [...r.fataal, ...r.waarschuwingen].join(" ");
     assert.ok(!/Latin1|collat/i.test(tekst));
     assert.ok(!/\b12\b|2014/.test(tekst));
+    // Op 2016–2022 alleen "vóór 2025", nooit de versie zelf.
+    const oud = beoordeelMssqlControles({ ...GOED, hoofdversie: 15 }).waarschuwingen.join(" ");
+    assert.ok(!/\b15\b|2019/.test(oud), oud);
   });
 });

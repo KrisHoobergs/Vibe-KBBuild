@@ -19,7 +19,7 @@ export const fulltext: Migratie = {
   naam: "0005_fulltext",
   transactioneel: false,
   overslaanReden:
-    "Full-Text Search is niet geïnstalleerd op de SQL Server (of kent geen Nederlands); zoeken werkt zonder vervoegingen. Na het installeren van full-text de migraties opnieuw uitvoeren.",
+    "Full-Text Search is niet geïnstalleerd op de SQL Server (of kent geen Nederlands); zoeken werkt dan eenvoudiger. Na het installeren van full-text de migraties opnieuw uitvoeren.",
   async up(db) {
     const { rows } = await sql<{ fts: number | null; nederlands: number }>`
       SELECT CAST(FULLTEXTSERVICEPROPERTY('IsFullTextInstalled') AS int) AS fts,
