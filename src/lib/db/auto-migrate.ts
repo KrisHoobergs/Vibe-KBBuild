@@ -42,7 +42,9 @@ export async function voerMigratiesUit(log: (bericht: string) => void = console.
       "Geweigerd: deze installatie gebruikt Supabase. Supabase-migraties gaan handmatig (supabase/migrations)."
     );
   }
-  assertGeenSupabaseDatabase(config.db.url);
+  if (config.db.dialect === "postgres") assertGeenSupabaseDatabase(config.db.url);
+  // TIJDELIJK (fase 3): de SQL Server-migraties komen in een volgende stap.
+  if (config.db.dialect === "mssql") throw new Error("SQL Server-migraties volgen in een volgende stap");
 
   for (let poging = 1; ; poging++) {
     // Eén verbinding, met ruim de tijd: bij het opstarten kan de database

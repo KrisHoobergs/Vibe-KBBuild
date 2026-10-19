@@ -1,6 +1,6 @@
 import { Kysely, PostgresDialect } from "kysely";
 import pg from "pg";
-import type { DbConfig } from "@/lib/config";
+import type { DbConfig, PostgresDbConfig } from "@/lib/config";
 import type { Database } from "./schema";
 
 // Bouwt de Kysely-instantie voor een configuratie. Geen "server-only" hier: ook
@@ -17,7 +17,7 @@ const pgTypes = {
 
 export type PoolOpties = { verbindingsTimeoutMs?: number; idleTimeoutMs?: number };
 
-export function maakPostgresPool(config: DbConfig, opties: PoolOpties = {}) {
+export function maakPostgresPool(config: PostgresDbConfig, opties: PoolOpties = {}) {
   const pool = new pg.Pool({
     connectionString: config.url,
     ssl: config.ssl,
@@ -42,6 +42,8 @@ export function maakKysely(
   config: DbConfig,
   opties: PoolOpties = {}
 ): { db: Kysely<Database>; pool: pg.Pool } {
+  // TIJDELIJK (fase 3): de SQL Server-verbinding komt in de volgende stap.
+  if (config.dialect === "mssql") throw new Error("SQL Server-verbinding volgt in een volgende stap");
   const pool = maakPostgresPool(config, opties);
   return { db: new Kysely<Database>({ dialect: new PostgresDialect({ pool }) }), pool };
 }
