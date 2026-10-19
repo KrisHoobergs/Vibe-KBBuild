@@ -344,14 +344,21 @@ jobs:
           docker compose cp kennisbank.bak db:/var/opt/mssql/backup/kennisbank.bak
           docker compose exec -T -u root db chown mssql /var/opt/mssql/backup/kennisbank.bak
           docker compose exec -T db sh -c '/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -b -i /init/terugzetten.sql'
+          # Een back-up van een andere server nabootsen: de login van de app opnieuw
+          # laten maken (nieuwe SID), zodat de gebruiker in de teruggezette database
+          # wees is. Alleen als db-init hem opnieuw koppelt (ALTER USER … WITH LOGIN),
+          # kan de app weer aanmelden.
+          sql "USE master; DROP LOGIN [kennisbank];"
           docker compose up -d
 
+          # db-init liep opnieuw: de login bestaat weer en de gebruiker hoort er weer bij.
+          test "$(sql "SELECT COUNT(*) FROM sys.database_principals AS dp
+                         JOIN sys.server_principals AS sp ON sp.sid = dp.sid
+                        WHERE dp.name = N'kennisbank' AND sp.name = N'kennisbank'" | tr -d '\r')" = "1"
           # Alles terug: de tag, en full-text vindt het artikel weer.
           test "$(sql "SELECT COUNT(*) FROM dbo.tags WHERE slug = N'back-uptest'" | tr -d '\r')" = "1"
           for i in $(seq 1 120); do test "$(gevonden)" = "1" && break; sleep 1; done
           test "$(gevonden)" = "1"
-          # db-init koppelde de app-gebruiker opnieuw aan zijn login (ALTER USER … WITH LOGIN).
-          docker compose logs db-init | grep -q "zijn klaar"
           for i in $(seq 1 60); do
             if curl -fs http://localhost:3000/api/gezondheid; then echo; exit 0; fi
             sleep 2
@@ -360,12 +367,29 @@ jobs:
 
       - name: SQL Server herstarten terwijl de app draait (R-10)
         run: |
+          # /api/gezondheid opent telkens een eigen verbinding; /registreren leest via
+          # de gedeelde pool van getDb() (hasAnyAccount, REGISTRATIE=uitnodiging) en
+          # geeft een 500 als die stuk is. De app is net opnieuw gestart, dus eerst de
+          # pool vullen: die verbindingen (60 s bewaard) zijn na de herstart dood.
+          for i in 1 2 3; do curl -fs -o /dev/null http://localhost:3000/registreren & done; wait
           docker compose restart db
+          gezond=
           for i in $(seq 1 90); do
-            if curl -fs http://localhost:3000/api/gezondheid > /dev/null; then echo "weer gezond na ongeveer $((i * 2)) s"; exit 0; fi
+            if curl -fs http://localhost:3000/api/gezondheid > /dev/null; then gezond=1; echo "weer gezond na ongeveer $((i * 2)) s"; break; fi
             sleep 2
           done
-          echo "Niet gezond na een herstart van SQL Server"; curl -s http://localhost:3000/api/gezondheid; exit 1
+          if [ -z "$gezond" ]; then
+            echo "Niet gezond na een herstart van SQL Server"; curl -s http://localhost:3000/api/gezondheid; exit 1
+          fi
+          # De pool van de app zelf: hooguit één mislukte aanvraag, daarna lukt alles
+          # (validateConnections vervangt de dode verbindingen). Ook gelijktijdig,
+          # zodat meer dan één verbinding uit de pool meedoet.
+          : > codes.txt
+          for i in 1 2 3 4 5; do curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/registreren >> codes.txt; done
+          for i in 1 2 3; do curl -s -o /dev/null -w "%{http_code}\n" http://localhost:3000/registreren >> codes.txt & done; wait
+          echo "/registreren na de herstart: $(tr '\n' ' ' < codes.txt)"
+          test "$(grep -vc '^200$' codes.txt)" -le 1
+          test "$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/registreren)" = "200"
 
       - name: Logboek
         if: always()
@@ -373,4 +397,4 @@ jobs:
 
       - name: Opruimen
         if: always()
-        run: docker compose down -v; rm -f .env kennisbank.bak gezondheid.json status.html
+        run: docker compose down -v; rm -f .env kennisbank.bak gezondheid.json status.html codes.txt
