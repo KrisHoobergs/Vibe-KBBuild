@@ -15,6 +15,7 @@ Dockerfile
 docker-compose.yml
 docker-compose.mssql.yml
 docker
-# Back-ups uit docs/installatie.md (dump en bestandenarchief).
+# Back-ups uit docs/installatie.md (dump, SQL Server-back-up en bestandenarchief).
 *.dump
+*.bak
 *.tgz

@@ -6,7 +6,8 @@ het eigen Gmail-account.
 
 Eén code, meerdere installaties: elke installatie heeft een eigen adres, een
 eigen database en eigen gebruikers. Mogelijk zijn Supabase, PostgreSQL (bv.
-Neon) en zelf hosten met Docker of als Node-dienst; SQL Server volgt.
+Neon, of zelf gehost) en SQL Server (2016 of nieuwer, zelf gehost). Zelf
+hosten kan met Docker of als Node-dienst (bv. een Windows-dienst).
 
 - **Een nieuwe kennisbank opzetten:** [docs/installatie.md](docs/installatie.md)
 - **Ontwikkelen:** zie [CLAUDE.md](CLAUDE.md) (commando's, architectuur, afspraken)

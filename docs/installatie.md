@@ -11,10 +11,9 @@ installaties die `main` volgen.
 | **B. Online** | PostgreSQL bij Neon | eigen login | in de database (max. 4 MB per bestand) | Vercel | kennisbank-werk |
 | **C. Zelf hosten met Docker** | PostgreSQL in Docker | eigen login | map op de server, of in de database | eigen Linux-server | |
 | **D. Zelf hosten zonder Docker** | PostgreSQL | eigen login | map op de server | Windows- of Linux-server | |
+| **E. SQL Server** | SQL Server 2016 of nieuwer (ook Express) | eigen login | map op de server, of in de database | Linux-server met Docker, of Windows-server (als dienst) | |
 
-SQL Server volgt later (fase 3).
-
-## Wat altijd geldt (B, C en D)
+## Wat altijd geldt (B tot en met E)
 
 - **De eerste die zich registreert, wordt beheerder.** Registreer jezelf dus
   meteen na de installatie, vóór je het adres deelt, en doe dat via het adres
@@ -326,7 +325,433 @@ nssm start Kennisbank
 
 ---
 
-## Reverse proxy en HTTPS (C en D)
+## E. SQL Server
+
+Voor wie SQL Server wil of moet gebruiken in plaats van PostgreSQL (bv. op het
+werk). De app is dezelfde, alleen de database verschilt. Altijd zelf gehost
+en met de eigen login: op Vercel weigert de app SQL Server.
+
+**Welke SQL Server?**
+
+- **Versie:** SQL Server 2016 of nieuwer, op Windows of Linux. Aanbevolen:
+  **2025**. Op 2016 tot en met 2022 zoekt de app minder goed in het
+  Nederlands (zie *Zoeken en andere verschillen*).
+- **Editie:** **Express** is gratis, ook voor productie, maar een database
+  mag er hoogstens 50 GB groot worden (tot en met SQL Server 2022: 10 GB).
+  Bewaar de bestanden (afbeeldingen, video's) dan in een map
+  (`STORAGE_DRIVER=filesystem`), niet in de database. Standard en Enterprise
+  hebben die grens niet. *Developer* is gratis, maar mag niet voor productie.
+- **Full-Text Search**, een apart onderdeel van SQL Server, is sterk
+  aanbevolen: daarmee vindt het zoeken ook andere vormen van een woord
+  (`artikel` ↔ `artikelen`, `lopen` ↔ `liep`). Zonder werkt het zoeken
+  eenvoudiger (zie E2, stap 1).
+- **Azure SQL** zou moeten werken (`MSSQL_AUTH=azure-default`), maar is niet
+  getest.
+
+Twee manieren:
+
+- **E1. Met Docker:** SQL Server en de kennisbank samen op één Linux-server.
+  Het eenvoudigst als er nog geen SQL Server is.
+- **E2. Met een bestaande SQL Server**, bv. die van het werk op Windows. De
+  kennisbank draait dan als dienst, zoals in D.
+
+Is er al een SQL Server, laat IT dan eerst `scripts/mssql/inventaris.sql`
+uitvoeren (in SSMS of met `sqlcmd`, als beheerder). Dat script verandert
+niets. Het toont wat hieronder nodig is: versie en editie, of Full-Text
+Search geïnstalleerd is, of SQL-logins mogen, de poort en de versleuteling.
+
+### E1. Met Docker (Linux-server)
+
+**Nodig:** een Linux-server met een x86-64-processor (SQL Server draait niet
+op ARM), minstens 4 GB geheugen (SQL Server alleen gebruikt er al 2), Docker
+Engine en Docker Compose, en Git. Voor gebruik buiten het eigen netwerk ook
+een domeinnaam met HTTPS (zie *Reverse proxy*). Docker Desktop op Windows is
+niet geschikt als server (zie C).
+
+```bash
+git clone https://github.com/KrisHoobergs/Vibe-KBBuild.git kennisbank
+cd kennisbank
+cp .env.mssql.example .env      # en vul .env in (zie hieronder)
+docker compose -f docker-compose.mssql.yml up -d --build
+```
+
+De eerste keer duurt dat enkele minuten: Docker haalt SQL Server op (ruim
+een gigabyte) en voegt er Full-Text Search aan toe.
+
+In `.env` vul je in (de uitleg staat ook in het bestand zelf):
+
+- `MSSQL_SA_PASSWORD` (de beheerder van SQL Server, `sa`) en
+  `MSSQL_APP_PASSWORD` (de login waarmee de app werkt). Elk minstens 8 tekens
+  met hoofdletters, kleine letters en cijfers, zonder `'` of `"`. Bv. de
+  uitvoer van `echo "Kb1-$(openssl rand -hex 16)"`. Het `sa`-wachtwoord geldt
+  vanaf de eerste start: later wijzigen in `.env` verandert het in SQL Server
+  niet meer. Dat van de app wordt bij elke start opnieuw gezet.
+- `MSSQL_PID`: de editie, standaard `Express`. Voor Standard of Enterprise:
+  de productsleutel. `Developer` mag niet voor productie.
+- `SITE_URL`, `BETTER_AUTH_SECRET` en `MAIL_ENCRYPTION_KEY`: zoals in C.
+
+Optioneel: `POORT` (zie *Reverse proxy*), `STORAGE_DRIVER` (standaard
+`filesystem`; `database` zet de bestanden in SQL Server, en dat kies je vóór
+de eerste upload), `REGISTRATIE` en `MSSQL_MEMORY_LIMIT_MB` (geheugen voor SQL
+Server, standaard en minstens 2048).
+
+Wat er dan draait: `db` is SQL Server met Full-Text Search. `db-init` maakt
+bij elke start de database `kennisbank` en de login `kennisbank` aan, of werkt
+ze bij (`docker/mssql-init/kennisbank.sql`). Daarna start `app`, die zelf de
+tabellen en de zoekindex aanmaakt. SQL Server is niet bereikbaar van buiten
+Docker.
+
+Daarna:
+
+- `http://<server>:3000/status` moet groen zijn, met onderaan *Database: SQL
+  Server* en *Zoeken: Full-text*. `docker compose -f docker-compose.mssql.yml ps`
+  toont `db` en `app` als "healthy". Bij `ps -a` staat `db-init` op
+  "Exited (0)": dat is normaal.
+- Registreer jezelf meteen via het adres uit `SITE_URL`, zoals in C.
+
+Tip: zet `COMPOSE_FILE=docker-compose.mssql.yml` in `.env`, dan mag
+`-f docker-compose.mssql.yml` in alle commando's weg. Hieronder staat het er
+telkens bij.
+
+**Bijwerken:**
+
+```bash
+git pull
+docker compose -f docker-compose.mssql.yml up -d --build    # de database wordt automatisch bijgewerkt
+```
+
+**Back-up** (database en bestanden), in bash op de server:
+
+```bash
+docker compose -f docker-compose.mssql.yml exec -T db sh -c '/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -b -i /init/backup.sql'
+docker compose -f docker-compose.mssql.yml cp db:/var/opt/mssql/backup/kennisbank.bak kennisbank.bak
+docker compose -f docker-compose.mssql.yml exec -T app tar czf /tmp/bestanden.tgz -C /data/bestanden .
+docker compose -f docker-compose.mssql.yml cp app:/tmp/bestanden.tgz bestanden.tgz
+```
+
+Het eerste commando maakt de back-up en controleert ze meteen. Bewaar
+`kennisbank.bak`, `bestanden.tgz` en een kopie van `.env` samen op een
+veilige plek, buiten de server.
+
+**Terugzetten** (met dezelfde `.env`, na `docker compose -f docker-compose.mssql.yml up -d`):
+
+```bash
+docker compose -f docker-compose.mssql.yml stop app
+docker compose -f docker-compose.mssql.yml cp kennisbank.bak db:/var/opt/mssql/backup/kennisbank.bak
+docker compose -f docker-compose.mssql.yml exec -T -u root db chown mssql /var/opt/mssql/backup/kennisbank.bak
+docker compose -f docker-compose.mssql.yml exec -T db sh -c '/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -b -i /init/terugzetten.sql'
+docker compose -f docker-compose.mssql.yml up -d
+docker compose -f docker-compose.mssql.yml cp bestanden.tgz app:/tmp/bestanden.tgz
+docker compose -f docker-compose.mssql.yml exec -T -u root app chown node:node /tmp/bestanden.tgz
+docker compose -f docker-compose.mssql.yml exec -T app tar xzf /tmp/bestanden.tgz -C /data/bestanden
+```
+
+Bij `up -d` koppelt `db-init` de gebruiker van de app weer aan zijn login.
+Zo werkt ook een back-up van een andere server.
+
+**Logboek:** `docker compose -f docker-compose.mssql.yml logs --tail 200 app`
+(SQL Server zelf: `… logs --tail 200 db`).
+
+**Met SSMS in de database kijken** (zelden nodig): voeg bij de dienst `db` in
+`docker-compose.mssql.yml` de regel `ports: ["127.0.0.1:1433:1433"]` toe, voer
+`docker compose -f docker-compose.mssql.yml up -d` uit en verbind via een
+SSH-tunnel naar de server, als `sa`.
+
+### E2. Met een bestaande SQL Server (bv. Windows-server)
+
+**Nodig:** de SQL Server en iemand met beheerrechten erop (sysadmin), SQL
+Server Management Studio (SSMS, gratis bij Microsoft) om de database aan te
+maken, en voor de kennisbank zelf hetzelfde als in D: Node.js 22 of nieuwer
+(24 aanbevolen) en Git. De kennisbank mag op dezelfde server staan als SQL
+Server, of op een andere.
+
+1. **Full-Text Search** (aanbevolen). Nagaan in SSMS:
+   `SELECT FULLTEXTSERVICEPROPERTY('IsFullTextInstalled')` moet `1` geven.
+   Anders installeren:
+
+   - **Windows:** start de installatie van SQL Server opnieuw (*SQL Server
+     Installation Center* → *Installation* → *New SQL Server stand-alone
+     installation or add features to an existing installation*), kies de
+     bestaande instantie en vink bij *Feature Selection* **Full-Text and
+     Semantic Extractions for Search** aan. Express tot en met 2022 heeft dat
+     onderdeel alleen in het pakket *Express with Advanced Services* (in de
+     installer: *Download Media* → *Express Advanced*). Vanaf 2025 zit het in
+     elke Express.
+   - **Linux** (Ubuntu):
+
+     ```bash
+     sudo apt-get update
+     sudo apt-get install -y mssql-server-fts
+     sudo systemctl restart mssql-server
+     ```
+
+     Op Red Hat: `sudo yum install -y mssql-server-fts`. Het pakket hoort
+     bij exact dezelfde versie van SQL Server; apt werkt SQL Server zo nodig
+     mee bij. Plan het dus als een update.
+
+   Komt Full-Text Search er pas na de installatie van de kennisbank bij, dan
+   maakt de kennisbank de zoekindex bij de volgende start
+   (`DB_AUTO_MIGRATE=true`, dus `nssm restart Kennisbank`) of met
+   `npm run db:migrate` (zie stap 8). Binnen 5 minuten zoekt ze er dan mee.
+
+2. **SQL-logins toestaan** (*mixed mode*; op Linux staat dat al goed). In
+   SSMS: rechtsklik op de server → *Properties* → *Security* → **SQL Server
+   and Windows Authentication mode** → OK. Herstart daarna SQL Server
+   (rechtsklik op de server → *Restart*). Bij de installatie heet dit
+   *Mixed Mode*.
+
+   Staat IT alleen Windows-accounts toe? Dan kan een dienstaccount mét
+   wachtwoord, via NTLM (`MSSQL_AUTH=ntlm`, zie *Alle SQL
+   Server-instellingen*). Aanmelden zonder wachtwoord (Kerberos, of het
+   account waaronder de dienst draait) kan niet. NTLM is nog niet getest op
+   een echte domeinserver.
+
+3. **TCP/IP met een vaste poort** (op Linux staat dat al goed: poort 1433).
+   De app verbindt altijd via TCP/IP, en Express zet dat standaard uit. In
+   *SQL Server Configuration Manager* → *SQL Server Network Configuration* →
+   *Protocols for MSSQLSERVER* (Express: *Protocols for SQLEXPRESS*):
+
+   - *TCP/IP* → *Enabled*: **Yes**;
+   - *TCP/IP* → *Properties* → tabblad *IP Addresses* → helemaal onderaan
+     **IPAll**: *TCP Dynamic Ports* leegmaken, *TCP Port* `1433`;
+   - herstart SQL Server (onder *SQL Server Services*: *SQL Server (…)* →
+     *Restart*).
+
+   Staat de kennisbank op een **andere** server, open dan poort 1433 in de
+   firewall van de SQL Server, alleen voor die server (PowerShell als
+   beheerder; op Linux bv. `sudo ufw allow from <IP-adres> to any port 1433 proto tcp`):
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "SQL Server voor de kennisbank" -Direction Inbound -Protocol TCP -LocalPort 1433 -RemoteAddress <IP-adres van de kennisbankserver> -Action Allow
+   ```
+
+   Op dezelfde server is geen firewallregel nodig. Een instantienaam zonder
+   vaste poort (`sqlsrv01\SQLEXPRESS`) kan ook, maar vraagt de dienst *SQL
+   Server Browser* en UDP-poort 1434. Een vaste poort is eenvoudiger.
+
+4. **Database en login.** In SSMS, aangemeld als beheerder: *New Query*, plak
+   dit, vul een wachtwoord in en druk **F5**:
+
+   ```sql
+   -- 1. Database: UTF-8, hoofdletterongevoelig, emoji als één teken
+   CREATE DATABASE kennisbank COLLATE Latin1_General_100_CI_AS_SC_UTF8;
+   GO
+   ALTER DATABASE kennisbank SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;
+   ALTER DATABASE kennisbank SET RECOVERY SIMPLE;
+   GO
+   -- 2. Login voor de app
+   CREATE LOGIN kennisbank WITH PASSWORD = N'<wachtwoord>',
+     DEFAULT_DATABASE = kennisbank, CHECK_POLICY = ON, CHECK_EXPIRATION = OFF;
+   GO
+   -- 3. Gebruiker in de database, met alleen deze rechten
+   USE kennisbank;
+   CREATE USER kennisbank FOR LOGIN kennisbank WITH DEFAULT_SCHEMA = dbo;
+   ALTER ROLE db_ddladmin ADD MEMBER kennisbank;
+   ALTER ROLE db_datareader ADD MEMBER kennisbank;
+   ALTER ROLE db_datawriter ADD MEMBER kennisbank;
+   GO
+   ```
+
+   - SQL Server 2016 of 2017: `COLLATE Latin1_General_100_CI_AS_SC` (zonder
+     `_UTF8`, dat bestaat pas vanaf 2019).
+   - `READ_COMMITTED_SNAPSHOT ON`: wie leest, wacht niet op wie schrijft,
+     zoals in PostgreSQL.
+   - `RECOVERY SIMPLE`: geen log-back-ups nodig. Maakt IT al log-back-ups van
+     alle databases, laat die regel dan weg.
+   - `CHECK_EXPIRATION = OFF`: het wachtwoord verloopt niet. Anders werkt de
+     kennisbank op een dag plots niet meer.
+   - Het wachtwoord: minstens drie soorten tekens (hoofdletters, kleine
+     letters, cijfers, leestekens). Vermijd `'`, `"`, `$` en spaties: die
+     geven problemen in de commando's van stap 7 en 8.
+   - De rechten: `db_ddladmin` om tabellen en de zoekindex aan te maken en bij
+     te werken (bij de installatie en na een update), `db_datareader` en
+     `db_datawriter` voor de gegevens. Geen `db_owner`, geen `sysadmin`, geen
+     rechten in andere databases.
+   - Wil IT de app geen `db_ddladmin` geven? Laat die regel dan weg, zet
+     `DB_AUTO_MIGRATE=false` (stap 6) en laat IT na de installatie en na elke
+     update `npm run db:migrate` uitvoeren (stap 8).
+   - Met een Windows-account (NTLM) in plaats van een SQL-login: vervang deel
+     2 door `CREATE LOGIN [DOMEIN\svc_kennisbank] FROM WINDOWS WITH DEFAULT_DATABASE = kennisbank;`
+     en gebruik in deel 3 `[DOMEIN\svc_kennisbank]` als naam van de
+     gebruiker en de login, dus overal behalve in `USE kennisbank`.
+
+5. **Bouwen:** zoals D, stap 2.
+
+6. **Instellingen** (als omgevingsvariabelen van de dienst, zie stap 7):
+
+   | Sleutel | Waarde |
+   |---|---|
+   | `DB_DIALECT` | `mssql` |
+   | `MSSQL_SERVER` | `localhost` als SQL Server op dezelfde server staat; anders de servernaam zoals in SSMS, bv. `sqlsrv01` of `sqlsrv01,1433` |
+   | `MSSQL_DATABASE` | `kennisbank` |
+   | `MSSQL_USER` | `kennisbank` |
+   | `MSSQL_PASSWORD` | het wachtwoord uit stap 4 |
+   | `AUTH_DRIVER` | `local` |
+   | `STORAGE_DRIVER` | `filesystem` (aanbevolen, zeker met Express) of `database` |
+   | `STORAGE_DIR` | alleen bij `filesystem`: zoals in D, stap 3 |
+   | `REGISTRATIE`, `DB_AUTO_MIGRATE`, `SITE_URL`, `BETTER_AUTH_SECRET`, `MAIL_ENCRYPTION_KEY`, `PORT`, `HOSTNAME` | zoals in D, stap 3 |
+
+   `DATABASE_URL` en `DATABASE_SSL` zijn bij SQL Server niet nodig (ze tellen
+   niet mee). De verbinding is standaard versleuteld, zonder het certificaat
+   van SQL Server te controleren (een standaardinstallatie heeft een
+   zelfondertekend certificaat). Andere poort, instantienaam, NTLM of het
+   certificaat wél controleren: zie *Alle SQL Server-instellingen*.
+
+7. **Als Windows-dienst**, zoals D, stap 4, met deze instellingen en met SQL
+   Server als afhankelijkheid:
+
+   ```powershell
+   nssm install Kennisbank "C:\Program Files\nodejs\node.exe" "C:\kennisbank\.next\standalone\server.js"
+   nssm set Kennisbank AppDirectory C:\kennisbank\.next\standalone
+   nssm set Kennisbank AppEnvironmentExtra DB_DIALECT=mssql MSSQL_SERVER=localhost MSSQL_DATABASE=kennisbank MSSQL_USER=kennisbank MSSQL_PASSWORD=… AUTH_DRIVER=local STORAGE_DRIVER=filesystem STORAGE_DIR=D:\kennisbank\bestanden REGISTRATIE=uitnodiging DB_AUTO_MIGRATE=true SITE_URL=https://… BETTER_AUTH_SECRET=… MAIL_ENCRYPTION_KEY=… PORT=3000 HOSTNAME=127.0.0.1
+   nssm set Kennisbank DependOnService MSSQLSERVER
+   nssm set Kennisbank AppStdout D:\kennisbank\logboek.txt
+   nssm set Kennisbank AppStderr D:\kennisbank\logboek.txt
+   nssm set Kennisbank AppRotateFiles 1
+   nssm set Kennisbank AppRotateBytes 10485760
+   nssm start Kennisbank
+   ```
+
+   - `DependOnService` is de naam van de dienst van SQL Server (zie
+     *Services*): `MSSQLSERVER` voor de standaardinstantie,
+     `'MSSQL$SQLEXPRESS'` voor Express. Die enkele aanhalingstekens zijn
+     nodig, anders maakt PowerShell iets anders van `$SQLEXPRESS`. Zo start
+     de kennisbank na een herstart pas als SQL Server draait. Staat SQL
+     Server op een andere server, laat de regel dan weg.
+   - De opmerkingen bij D, stap 4 gelden ook hier, vooral: `nssm set
+     Kennisbank AppEnvironmentExtra …` vervangt telkens de hele lijst.
+   - Op Linux: een systemd-service met `After=mssql-server.service` als SQL
+     Server op dezelfde server draait.
+
+8. **Controle.** Open `/status`: alles groen, en onderaan *Database: SQL
+   Server* en *Zoeken: Full-text* (of *Eenvoudig*, zie hieronder). Een kader
+   *Aandachtspunten SQL Server* noemt wat werkt, maar beter kan. Registreer
+   jezelf daarna meteen via het adres uit `SITE_URL`.
+
+   Meer details (versie, collatie, rechten van de login, versleuteling van
+   de verbinding) toont `npm run db:mssql:controle`. Dat verandert niets. Het
+   heeft dezelfde instellingen nodig als de dienst, bv. in PowerShell:
+
+   ```powershell
+   cd C:\kennisbank
+   $env:DB_DIALECT = "mssql"; $env:MSSQL_SERVER = "localhost"; $env:MSSQL_DATABASE = "kennisbank"
+   $env:MSSQL_USER = "kennisbank"; $env:MSSQL_PASSWORD = "…"
+   $env:AUTH_DRIVER = "local"; $env:STORAGE_DRIVER = "database"; $env:SITE_URL = "https://…"; $env:BETTER_AUTH_SECRET = "…"
+   npm run db:mssql:controle
+   ```
+
+   In hetzelfde venster werkt ook `npm run db:migrate` (de database
+   bijwerken). Zonder `db_ddladmin` voor de app (stap 4) gebruikt IT daarvoor
+   in `MSSQL_USER` en `MSSQL_PASSWORD` een login met `db_ddladmin` of
+   `db_owner` in de database. Sluit het venster daarna: het wachtwoord staat
+   erin.
+
+**Bijwerken:** zoals in D (dienst stoppen, `git pull`, `npm ci`, bouwen,
+kopiëren, dienst starten). De database wordt bij het starten bijgewerkt, of
+met `npm run db:migrate` (stap 8).
+
+**Back-up.** Met `sqlcmd` (komt mee met SQL Server; anders
+`winget install sqlcmd`), in PowerShell als een Windows-account dat beheerder
+is in SQL Server. De map moet bestaan, en de dienst van SQL Server moet erin
+mogen schrijven. Eenmalig:
+
+```powershell
+New-Item -ItemType Directory -Force D:\kennisbank\backup
+icacls D:\kennisbank\backup /grant "NT Service\MSSQLSERVER:(OI)(CI)M"
+```
+
+Express: `icacls D:\kennisbank\backup /grant 'NT Service\MSSQL$SQLEXPRESS:(OI)(CI)M'`
+(met enkele aanhalingstekens). Daarna, telkens:
+
+```powershell
+sqlcmd -S localhost -E -C -b -Q "BACKUP DATABASE [kennisbank] TO DISK = N'D:\kennisbank\backup\kennisbank.bak' WITH INIT, FORMAT, CHECKSUM; RESTORE VERIFYONLY FROM DISK = N'D:\kennisbank\backup\kennisbank.bak' WITH CHECKSUM"
+```
+
+- Express: `-S localhost\SQLEXPRESS`.
+- `RESTORE VERIFYONLY` controleert de back-up meteen.
+- Bewaar daarbij een kopie van de map `STORAGE_DIR` en de instellingen van
+  stap 6 (vooral `MAIL_ENCRYPTION_KEY`).
+- Express heeft geen SQL Server Agent om back-ups te plannen. Plan dezelfde
+  regel dan met de Windows Taakplanner.
+
+**Terugzetten:**
+
+```powershell
+nssm stop Kennisbank
+sqlcmd -S localhost -E -C -b -Q "IF DB_ID(N'kennisbank') IS NOT NULL ALTER DATABASE [kennisbank] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; RESTORE DATABASE [kennisbank] FROM DISK = N'D:\kennisbank\backup\kennisbank.bak' WITH REPLACE, CHECKSUM; ALTER DATABASE [kennisbank] SET MULTI_USER"
+sqlcmd -S localhost -E -C -b -d kennisbank -Q "ALTER USER [kennisbank] WITH LOGIN = [kennisbank]"
+# zet daarna de inhoud van de map STORAGE_DIR terug uit de back-up
+nssm start Kennisbank
+```
+
+- `ALTER USER … WITH LOGIN` koppelt de gebruiker in de database weer aan de
+  login. Dat is nodig op een andere server, of als de login opnieuw gemaakt
+  is; anders kan het geen kwaad.
+- Op een andere server moet de login al bestaan (stap 4, deel 2). Staan de
+  databasebestanden daar in andere mappen, dan is `RESTORE … WITH MOVE`
+  nodig: vraag het aan IT.
+- Een back-up van een oudere versie van SQL Server kan naar een nieuwere,
+  niet omgekeerd.
+
+### Alle SQL Server-instellingen
+
+Alleen gelezen bij `DB_DIALECT=mssql`.
+
+| Sleutel | Standaard | Uitleg |
+|---|---|---|
+| `MSSQL_SERVER` | verplicht | De servernaam zoals in SSMS: `sqlsrv01`, `sqlsrv01,1433`, `sqlsrv01\SQLEXPRESS` of `tcp:sqlsrv01,1433`. `localhost` als SQL Server op dezelfde server staat. |
+| `MSSQL_DATABASE` | verplicht | `kennisbank` |
+| `MSSQL_PORT` | `1433` | Alleen voor een andere poort. Niet samen met een instantienaam. |
+| `MSSQL_INSTANCE` | – | Een instantienaam (bv. `SQLEXPRESS`) in plaats van een poort. Vraagt de dienst *SQL Server Browser* (UDP 1434). |
+| `MSSQL_AUTH` | `sql` | `sql` (een SQL-login), `ntlm` (een Windows-account met wachtwoord) of `azure-default` (Azure SQL, niet getest). |
+| `MSSQL_USER`, `MSSQL_PASSWORD` | verplicht bij `sql` en `ntlm` | De login. Bij `ntlm` mag `MSSQL_USER` de vorm `DOMEIN\naam` hebben. |
+| `MSSQL_DOMAIN` | – | Het domein bij `ntlm`, als `MSSQL_USER` geen `DOMEIN\` bevat. |
+| `MSSQL_AZURE_CLIENT_ID` | – | Alleen bij `azure-default`: de client-id van een user-assigned managed identity. |
+| `MSSQL_ENCRYPT` | `true` | `true`: versleuteld. `strict`: versleuteld vanaf de eerste byte (TDS 8, SQL Server 2022 en nieuwer, Azure), en controleert het certificaat altijd. `false`: onversleuteld, alleen toegestaan als SQL Server op dezelfde machine staat. |
+| `MSSQL_TRUST_SERVER_CERT` | `true` | `true`: het certificaat van SQL Server wordt niet gecontroleerd (zoals `DATABASE_SSL=no-verify`). `false`: wel controleren. Dat vraagt een echt certificaat op SQL Server, of `MSSQL_CA`. Standaard `false` met `MSSQL_CA` of `strict`. |
+| `MSSQL_CA` | – | Het CA-certificaat (PEM-tekst of base64) waarmee het certificaat van SQL Server gecontroleerd wordt. Niet samen met `MSSQL_TRUST_SERVER_CERT=true`. |
+| `MSSQL_TLS_SERVERNAME` | – | De naam in het certificaat, als je via een IP-adres of een andere naam verbindt. |
+| `DATABASE_POOL_MAX` | `5` | Hoeveel verbindingen de app tegelijk mag openen. |
+
+### Zoeken en andere verschillen met PostgreSQL
+
+**Met Full-Text Search** (*Zoeken: Full-text* op `/status`) werkt zoeken
+zoals bij PostgreSQL: andere vormen van een woord tellen mee (`artikelen`
+vindt `artikel`), hoofdletters en accenten niet (`cafe` vindt `café`), met
+`"…"` zoek je een exacte zin, met `-woord` sluit je uit en met `or` zoek je
+het ene of het andere. De verschillen:
+
+- Een zoekvraag met alleen uitsluitingen (`-concept`) vindt niets.
+- Een `"zin tussen aanhalingstekens"` moet exact zo voorkomen, zonder andere
+  vormen van de woorden.
+- Samengestelde woorden worden gesplitst: `bank` vindt ook `kennisbank`.
+- Een net opgeslagen of gewijzigd artikel is pas na enkele seconden
+  vindbaar.
+- Artikels met dezelfde score staan in een vaste volgorde (laatst gewijzigd
+  eerst).
+- SQL Server 2016 tot en met 2022 kent het Nederlands minder goed. In onze
+  tests (SQL Server 2022 op Linux) vond zoeken daar geen andere vormen van
+  een woord, alleen het woord zelf en de delen van samengestelde woorden.
+  Gebruik daarom bij voorkeur SQL Server 2025.
+
+**Zonder Full-Text Search** (*Zoeken: Eenvoudig*) zoekt de app naar (delen
+van) woorden. Hoofdletters en accenten tellen niet. `artikelen` vindt ook
+`artikel` (de app laat `-en` en `-s` weg), `kat` vindt ook `kater`, maar
+`liep` vindt `lopen` niet. Met veel artikels is dat ook trager. Oplossing:
+Full-Text Search installeren (E2, stap 1).
+
+**Verder:**
+
+- Adressen van artikels zijn niet hoofdlettergevoelig: `/artikelen/Mijn-Artikel`
+  opent ook `mijn-artikel`.
+- Bij sorteren op titel tellen leestekens (bv. een koppelteken) anders mee,
+  dus een enkele titel staat op een iets andere plaats.
+- Met Express mag de database hoogstens 50 GB (2025) of 10 GB (tot en met
+  2022) groot worden: bewaar bestanden dan in een map.
+
+---
+
+## Reverse proxy en HTTPS (C, D en E)
 
 Zet de kennisbank achter een reverse proxy die HTTPS verzorgt. Belangrijk:
 
@@ -340,10 +765,11 @@ Zet de kennisbank achter een reverse proxy die HTTPS verzorgt. Belangrijk:
 - Maak poort 3000 alleen bereikbaar voor de proxy, zodat niemand de proxy
   (en HTTPS) kan overslaan en zelf een X-Forwarded-For kan meesturen:
   - Proxy op dezelfde server, met Docker: `POORT=127.0.0.1:3000` in `.env`,
-    daarna `docker compose up -d`. Docker omzeilt de firewall van de server
-    (ufw), dus dit is nodig.
+    daarna `docker compose up -d` (met SQL Server:
+    `docker compose -f docker-compose.mssql.yml up -d`). Docker omzeilt de
+    firewall van de server (ufw), dus dit is nodig.
   - Proxy op dezelfde server, zonder Docker: `HOSTNAME=127.0.0.1` in de
-    volledige lijst van D, stap 4.
+    volledige lijst van D, stap 4 (of E2, stap 7).
   - Proxy op een andere server: een firewallregel die poort 3000 alleen voor
     het IP van de proxy openzet.
 - Zonder proxy (rechtstreeks via `http://<server>:3000`, alleen op het eigen
@@ -419,12 +845,14 @@ Host-header en laat het maar ±28 MB per verzoek toe:
 ## Problemen oplossen
 
 Kijk eerst op **`/status`**. Meer details staan in het logboek van de server:
-Docker `docker compose logs --tail 200 app`, Windows-dienst
-`D:\kennisbank\logboek.txt` (zie D, stap 4), Linux `journalctl -u <dienst> -n 200`.
+Docker `docker compose logs --tail 200 app` (met SQL Server:
+`docker compose -f docker-compose.mssql.yml logs --tail 200 app`),
+Windows-dienst `D:\kennisbank\logboek.txt` (zie D, stap 4), Linux
+`journalctl -u <dienst> -n 200`.
 
 | Melding of symptoom | Oorzaak en oplossing |
 |---|---|
-| Configuratie: *DATABASE_URL ontbreekt* | Sleutel ontbreekt of is fout gespeld (bv. `DATABSE_URL`). |
+| Configuratie: *DATABASE_URL ontbreekt* | Sleutel ontbreekt of is fout gespeld (bv. `DATABSE_URL`). Bij SQL Server: `DB_DIALECT=mssql` ontbreekt. |
 | Configuratie: *DATABASE_URL is geen geldige URL* | Er staat iets anders dan het adres in, bv. `psql '…'` of `DATABASE_URL=…`. Of het wachtwoord in het adres bevat `#`, `/`, `?` of `%` (zie D, stap 1). |
 | Configuratie: *BETTER_AUTH_SECRET …* / *SITE_URL ontbreekt* | Instelling toevoegen (zie de tabellen hierboven). |
 | Vercel-preview: `/status` geeft een serverfout, `/api/gezondheid` meldt *DATABASE_URL ontbreekt* | Normaal: de instellingen staan bewust alleen op Production (zie B, stap 2.3). Zet voor Preview nooit het adres van de echte database. |
@@ -440,3 +868,26 @@ Docker `docker compose logs --tail 200 app`, Windows-dienst
 | Beheerder kan niet meer inloggen | Een andere beheerder maakt een herstellink. Is er geen: vraag Claude, die kan met toegang tot de database een herstellink aanmaken. |
 | Upload mislukt op Vercel | Bestand groter dan 4 MB. |
 | Upload van een grote video mislukt achter een proxy | De proxy laat zo'n groot verzoek niet door (nginx: `client_max_body_size`, IIS: `maxAllowedContentLength`). |
+
+**SQL Server (E).** De melding op `/status` toont nooit de servernaam of de
+login (`[server]`, `[gebruiker]`). Het foutlogboek van SQL Server zelf (SSMS:
+*Management* → *SQL Server Logs*; Docker: `… logs db`) zegt vaak meer.
+
+| Melding of symptoom | Oorzaak en oplossing |
+|---|---|
+| Configuratie: *MSSQL_… ontbreekt*, *Geef een poort óf een instantienaam op*, *MSSQL_ENCRYPT=false mag alleen …* | De melding noemt de instelling. Zie *Alle SQL Server-instellingen* (E). `MSSQL_ENCRYPT=false` mag alleen als SQL Server op dezelfde machine staat; laat het anders weg. |
+| Configuratie: *SQL Server wordt op Vercel niet ondersteund* | Klopt: host de kennisbank zelf (E1 of E2). |
+| Database: *code ELOGIN … Login failed for user '[gebruiker]'* | Dezelfde melding voor verschillende oorzaken. Het foutlogboek van SQL Server toont fout 18456 met een *state*: 8 = verkeerd wachtwoord (`MSSQL_PASSWORD`), 5 = de login bestaat niet (`MSSQL_USER`), 58 = SQL-logins staan uit (E2, stap 2). Staat er vlak ervoor fout 4060, dan bestaat de database uit `MSSQL_DATABASE` niet, of heeft de login er geen gebruiker in (E2, stap 4; na het terugzetten op een andere server: `ALTER USER … WITH LOGIN`). Docker: na een wijziging van `MSSQL_APP_PASSWORD` in `.env` `up -d` gebruiken, niet `restart`. |
+| Database: *code ESOCKET … Failed to connect to [server]:1433 - connect ECONNREFUSED* of *code ETIMEOUT* | SQL Server is niet bereikbaar: de dienst draait niet, TCP/IP staat uit of luistert op een andere poort (E2, stap 3), de firewall houdt het tegen, of `MSSQL_SERVER`/`MSSQL_PORT` is fout. Test vanaf de server van de kennisbank: `Test-NetConnection <server> -Port 1433` (PowerShell) moet *TcpTestSucceeded : True* geven. |
+| Database: *code EINSTLOOKUP … SQL Server Browser* | Een instantienaam zonder poort, maar de dienst *SQL Server Browser* draait niet of UDP 1434 is dicht. Beter: een vaste poort (E2, stap 3) en `MSSQL_SERVER` zonder instantienaam. |
+| Database: *code ESOCKET … self-signed certificate*, *certificate has expired* of *… is not in the cert's altnames* | Het certificaat van SQL Server wordt gecontroleerd (`MSSQL_TRUST_SERVER_CERT=false`, `MSSQL_ENCRYPT=strict` of `MSSQL_CA`), maar klopt niet. Laat IT een echt certificaat op SQL Server zetten, zet de naam uit het certificaat in `MSSQL_TLS_SERVERNAME`, geef de CA in `MSSQL_CA`, of laat die instellingen weg (wel versleuteld, zonder controle). |
+| Database: *code EENCRYPT* | `MSSQL_ENCRYPT=false`, maar SQL Server eist versleuteling. Laat `MSSQL_ENCRYPT` weg. |
+| Database: *NOCOUNT staat aan in de serverinstellingen (user options)* | IT heeft NOCOUNT voor alle verbindingen aangezet; de app ziet dan niet of opslaan gelukt is. Laat IT bit 512 uit de serverinstelling *user options* halen (`sp_configure 'user options'`). |
+| Database: *SQL Server 2016 of nieuwer nodig* | De server is te oud. |
+| Migraties: *nr 262 … permission denied* | De login van de app mag geen tabellen maken (geen `db_ddladmin`). Geef die rol (E2, stap 4), of laat IT `npm run db:migrate` uitvoeren met een login die het wel mag (E2, stap 8). |
+| Aandachtspunten: *READ_COMMITTED_SNAPSHOT staat uit* | Werkt, maar wie leest, moet soms wachten op wie schrijft. Stop de kennisbank, voer als beheerder `ALTER DATABASE [kennisbank] SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;` uit en start ze weer. |
+| *Zoeken: Eenvoudig*, met *Full-text search is niet geïnstalleerd* | Installeer Full-Text Search (E2, stap 1) en herstart de kennisbank (met `DB_AUTO_MIGRATE=true`) of voer `npm run db:migrate` uit. |
+| *Zoeken: Eenvoudig*, met *Er is nog geen full-text-index* | Full-Text Search is er, maar de migraties liepen nog niet opnieuw: herstart de kennisbank of voer `npm run db:migrate` uit. |
+| Logboek: *[zoeken] full-text-fout …, terugval op LIKE* | Full-text gaf een fout; de app zoekt dan 5 minuten eenvoudig en probeert het daarna opnieuw. Blijft het terugkomen: kijk of de dienst *SQL Full-text Filter Daemon Launcher* draait (Windows). Na het terugzetten van een back-up van een oudere SQL Server: voer in de database `ALTER FULLTEXT CATALOG kb_fulltext REBUILD;` uit. |
+| Docker: de app start niet, `docker compose -f docker-compose.mssql.yml ps -a` toont `db-init` met "Exited" en een andere code dan 0 | `docker compose -f docker-compose.mssql.yml logs db-init`. *Password validation failed*: `MSSQL_APP_PASSWORD` is te eenvoudig. *mag geen ' of " bevatten*: kies een ander wachtwoord. Verander het in `.env` en voer `up -d` opnieuw uit. |
+| Docker: `db` stopt meteen of wordt nooit "healthy" | `docker compose -f docker-compose.mssql.yml logs db`. Bij de eerste start: `MSSQL_SA_PASSWORD` voldoet niet aan de regels (te kort of te eenvoudig), of de server heeft te weinig geheugen (minstens 2 GB voor SQL Server). Later: `MSSQL_SA_PASSWORD` in `.env` is gewijzigd, maar dat van de eerste start blijft gelden: zet het oude terug. |
