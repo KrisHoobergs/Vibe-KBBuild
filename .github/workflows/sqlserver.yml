@@ -1,0 +1,352 @@
+# SQL Server (fase 3): datalaag, migraties, eigen login en full-text tegen een
+# echte SQL Server in een Linux-container, in vier varianten (2025 en 2022, met
+# en zonder Full-Text Search, Developer en Express, READ_COMMITTED_SNAPSHOT aan
+# en uit). Daarna de hele app met docker-compose.mssql.yml, met back-up en
+# terugzetten zoals in docs/installatie.md.
+#
+# Alleen synthetische testgegevens: de repository is openbaar. Wachtwoorden
+# worden per run gemaakt en gemaskeerd; er zijn geen secrets nodig.
+
+name: SQL Server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/lib/db/**
+      - src/lib/storage/**
+      - src/lib/auth/**
+      - src/lib/config.ts
+      - src/lib/gezondheid.ts
+      - src/instrumentation.ts
+      - scripts/**
+      - docker/mssql-*/**
+      - docker-compose.mssql.yml
+      - Dockerfile
+      - package.json
+      - package-lock.json
+      - next.config.ts
+      - .github/workflows/sqlserver.yml
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      fts-dockerfile:
+        description: Dockerfile voor het image met full-text (Dockerfile.apt = terugvaloptie)
+        type: choice
+        options: [Dockerfile, Dockerfile.apt]
+        default: Dockerfile
+
+permissions:
+  contents: read
+
+# Een nieuwe push op dezelfde branch of PR maakt de vorige run overbodig.
+concurrency:
+  group: sqlserver-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  datalaag:
+    name: datalaag (${{ matrix.naam }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - naam: 2025 + full-text, Developer, RCSI aan
+            runner: ubuntu-24.04
+            image: fts
+            build-args: ""
+            pid: Developer
+            rcsi: "ON"
+            fulltext: "1"
+          - naam: 2025 + full-text, Express, RCSI uit
+            runner: ubuntu-24.04
+            image: fts
+            build-args: ""
+            pid: Express
+            rcsi: "OFF"
+            fulltext: "1"
+          # De Nederlandse stemmer van 2016-2022 (versie 1) is een andere dan die van 2025.
+          # Zowel de argumenten voor Dockerfile als die voor Dockerfile.apt (de andere negeert docker).
+          - naam: 2022 + full-text, Developer, RCSI aan
+            runner: ubuntu-24.04
+            image: fts
+            build-args: >-
+              --build-arg MSSQL_TAG=2022-CU27-GDR1-ubuntu-22.04
+              --build-arg FTS_REPO=ubuntu/22.04/mssql-server-2022
+              --build-arg FTS_VERSIE=16.0.4305.5-1
+              --build-arg FTS_SHA256=1299890caaa62fdc5334d65f8723f5457e6e154f8a02a2da78c7efd4c7c50336
+              --build-arg UBUNTU=22.04
+              --build-arg MSSQL_REPO=mssql-server-2022
+              --build-arg MSSQL_VERSIE=16.0.4305.5-1
+            pid: Developer
+            rcsi: "ON"
+            fulltext: "1"
+          - naam: 2025 zonder full-text (LIKE)
+            runner: ubuntu-24.04
+            image: mcr.microsoft.com/mssql/server:2025-CU9-GDR1-ubuntu-24.04
+            build-args: ""
+            pid: Developer
+            rcsi: "ON"
+            fulltext: "0"
+    env:
+      MSSQL_TEST_SERVER: 127.0.0.1
+      MSSQL_TEST_PORT: "1433"
+      MSSQL_TEST_DATABASE: kb_test
+      MSSQL_TEST_USER: kb_test_login
+      MSSQL_TEST_ENCRYPT: "true"
+      MSSQL_TEST_TRUST_SERVER_CERT: "true"
+      MSSQL_TEST_FULLTEXT_VERWACHT: ${{ matrix.fulltext }}
+      # sys.dm_fts_parser (FT-2 … FT-4) vraagt sysadmin.
+      MSSQL_TEST_BEHEERDER_USER: sa
+      FTS_DOCKERFILE: ${{ inputs.fts-dockerfile || 'Dockerfile' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Wachtwoorden en sqlcmd als sa
+        run: |
+          # Hoofdletter, kleine letter, cijfer en teken: voldoet aan het wachtwoordbeleid.
+          sa="Sa1-$(openssl rand -hex 16)"
+          test="Kb1-$(openssl rand -hex 16)"
+          echo "::add-mask::$sa"
+          echo "::add-mask::$test"
+          {
+            echo "SA_WACHTWOORD=$sa"
+            echo "MSSQL_TEST_PASSWORD=$test"
+            echo "MSSQL_TEST_BEHEERDER_PASSWORD=$sa"
+          } >> "$GITHUB_ENV"
+          # sqlcmd in de container, als sa; het wachtwoord via de omgeving, niet op de opdrachtregel.
+          mkdir -p "$RUNNER_TEMP/bin"
+          cat > "$RUNNER_TEMP/bin/sqlcmd-sa" <<'EOF'
+          #!/usr/bin/env bash
+          exec docker exec -e SQLCMDPASSWORD="$SA_WACHTWOORD" mssql /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa "$@"
+          EOF
+          chmod +x "$RUNNER_TEMP/bin/sqlcmd-sa"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Image met full-text bouwen (${{ env.FTS_DOCKERFILE }})
+        if: matrix.image == 'fts'
+        run: docker build -f "docker/mssql-fts/$FTS_DOCKERFILE" ${{ matrix.build-args }} -t kb-mssql:fts docker/mssql-fts
+
+      - name: SQL Server starten
+        env:
+          IMAGE: ${{ matrix.image == 'fts' && 'kb-mssql:fts' || matrix.image }}
+          PID: ${{ matrix.pid }}
+        run: |
+          # Servercollatie bewust ANDERS dan die van de database (zoals op veel
+          # bestaande servers), en een tijdzone die niet UTC is: zo vallen
+          # collatieconflicten (Msg 468) en lokale-tijdfouten op.
+          docker run -d --name mssql -p 1433:1433 \
+            -e ACCEPT_EULA=Y -e MSSQL_PID="$PID" \
+            -e MSSQL_SA_PASSWORD="$SA_WACHTWOORD" \
+            -e MSSQL_COLLATION=SQL_Latin1_General_CP1_CI_AS \
+            -e MSSQL_MEMORY_LIMIT_MB=2048 \
+            -e TZ=Europe/Brussels \
+            "$IMAGE"
+          for i in $(seq 1 90); do
+            sleep 2
+            if [ "$(docker inspect -f '{{.State.Running}}' mssql)" != "true" ]; then
+              echo "SQL Server is gestopt"; docker logs mssql 2>&1 | tail -100; exit 1
+            fi
+            if ! docker exec mssql test -x /opt/mssql-tools18/bin/sqlcmd; then
+              echo "Geen /opt/mssql-tools18/bin/sqlcmd in het image"; exit 1
+            fi
+            if sqlcmd-sa -b -Q "SELECT 1" -o /dev/null 2> /dev/null; then echo "klaar na ongeveer $((i * 2)) s"; exit 0; fi
+          done
+          docker logs mssql 2>&1 | tail -100
+          exit 1
+
+      - name: Full-text zoals verwacht?
+        run: |
+          v=$(sqlcmd-sa -b -h -1 -W -Q "SET NOCOUNT ON; SELECT CAST(FULLTEXTSERVICEPROPERTY('IsFullTextInstalled') AS int)" | tr -d '\r')
+          echo "IsFullTextInstalled=$v (verwacht ${{ matrix.fulltext }})"
+          test "$v" = "${{ matrix.fulltext }}"
+
+      - name: Inventaris (R-1, zelfde script als voor een eigen server)
+        run: |
+          docker cp scripts/mssql/inventaris.sql mssql:/tmp/inventaris.sql
+          sqlcmd-sa -i /tmp/inventaris.sql
+
+      - name: Testdatabase en testlogin (zelfde script als voor een eigen server)
+        run: |
+          docker cp scripts/mssql/testdatabase.sql mssql:/tmp/testdatabase.sql
+          sqlcmd-sa -b -i /tmp/testdatabase.sql \
+            -v TESTDATABASE="$MSSQL_TEST_DATABASE" TESTLOGIN="$MSSQL_TEST_USER" TESTWACHTWOORD="$MSSQL_TEST_PASSWORD" \
+               COLLATIE=Latin1_General_100_CI_AS_SC_UTF8 RCSI=${{ matrix.rcsi }}
+
+      - name: Unittests (zonder database)
+        run: npm run test:unit
+
+      - name: Verbinding en rechten van de testlogin
+        run: npm run db:mssql:controle -- --test
+
+      - name: Migratierunner (leeg, idempotent, gelijktijdig, mislukte migratie; FT-5, FT-6)
+        run: npm run db:test:migraties:mssql
+
+      - name: Datalaag (incl. zoeken FT-9 / FT-11)
+        run: npm run db:test:mssql
+
+      - name: Eigen login (Better Auth) en schemacontrole
+        run: npm run test:login:mssql
+
+      - name: Full-text (FT-1 … FT-4, FT-7, FT-8)
+        run: npm run test:fulltext:mssql
+
+      - name: Zoeken zoals /status het toont
+        run: |
+          npm run --silent db:mssql:controle -- --test | tee controle.txt
+          if [ "${{ matrix.fulltext }}" = "1" ]; then verwacht=full-text; else verwacht=eenvoudig; fi
+          grep -Eq "^ +zoeken +$verwacht\$" controle.txt
+
+      - name: ISO-tijdstippen met Z, ongeacht taal en datumvolgorde (R-3)
+        run: |
+          uit=$(sqlcmd-sa -b -h -1 -W -Q "SET NOCOUNT ON; SET LANGUAGE Dutch; SET DATEFORMAT dmy;
+            SELECT CONVERT(varchar(23), CAST(N'2026-10-19T16:55:55.657Z' AS datetime2(3)), 121);
+            DECLARE @t TABLE (d datetime2(3)); INSERT @t VALUES (N'2026-10-19T16:55:55.657Z');
+            SELECT COUNT(*) FROM @t WHERE d > N'2026-10-19T16:55:55.656Z';" | tr -d '\r')
+          echo "$uit"
+          echo "$uit" | grep -qx "2026-10-19 16:55:55.657"
+          test "$(echo "$uit" | tail -1)" = "1"
+
+      - name: Logboek SQL Server
+        if: failure()
+        run: docker logs mssql 2>&1 | tail -200
+
+  app:
+    name: app met docker-compose.mssql.yml
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      COMPOSE_FILE: docker-compose.mssql.yml
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Testinstellingen
+        run: |
+          sa="Sa1-$(openssl rand -hex 16)"
+          app="Kb1-$(openssl rand -hex 16)"
+          echo "::add-mask::$sa"
+          echo "::add-mask::$app"
+          {
+            echo "MSSQL_SA_PASSWORD=$sa"
+            echo "MSSQL_APP_PASSWORD=$app"
+            echo "MSSQL_PID=Express"
+            echo "SITE_URL=http://localhost:3000"
+            echo "BETTER_AUTH_SECRET=$(openssl rand -base64 36 | tr -d '\n')"
+            echo "MAIL_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '\n')"
+          } > .env
+          # sqlcmd als sa in de container db (wachtwoord uit de omgeving van die container).
+          mkdir -p "$RUNNER_TEMP/bin"
+          cat > "$RUNNER_TEMP/bin/sql" <<'EOF'
+          #!/usr/bin/env bash
+          # Gebruik: sql "<T-SQL>"  → resultaat zonder kopregels, als sa in de database kennisbank.
+          exec docker compose exec -T db sh -c '/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -b -d kennisbank -h -1 -W -Q "$0"' "SET NOCOUNT ON; $1"
+          EOF
+          chmod +x "$RUNNER_TEMP/bin/sql"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Bouwen en starten
+        run: docker compose up -d --build
+
+      - name: Wachten tot de installatie gezond is
+        run: |
+          gezond=
+          for i in $(seq 1 120); do
+            if curl -fs http://localhost:3000/api/gezondheid > gezondheid.json; then gezond=1; break; fi
+            sleep 5
+          done
+          if [ -z "$gezond" ]; then
+            echo "Niet gezond geworden"; curl -s http://localhost:3000/api/gezondheid; echo; exit 1
+          fi
+          cat gezondheid.json; echo
+          grep -q '"gezond":true' gezondheid.json
+          # Het is echt SQL Server, en zoeken gebruikt full-text (0005_fulltext liep bij het opstarten).
+          grep -q '"database":"mssql"' gezondheid.json
+          grep -q '"zoeken":"full-text"' gezondheid.json
+          grep -q '"migraties":{"status":"ok"}' gezondheid.json
+
+      - name: Pagina's controleren
+        run: |
+          for pad in /inloggen /registreren /status /wachtwoord-vergeten; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:3000$pad")
+            echo "$pad -> $code"; test "$code" = "200"
+          done
+          # Zonder login: doorsturen naar /inloggen en geen bestanden.
+          test "$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/artikelen)" = "307"
+          test "$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/bestanden/articles/a/b.png)" = "401"
+          # /status toont hoe er gezocht wordt, maar geen versie, collatie of server.
+          curl -fs http://localhost:3000/status > status.html
+          grep -q "Zoeken" status.html
+          grep -q "Full-text" status.html
+          if grep -Eq "17\.0\.[0-9]|Latin1_General|SQL_Latin1|Microsoft SQL Server|kb_test" status.html; then
+            echo "/status toont serverdetails"; exit 1
+          fi
+          # Draait als niet-root-gebruiker, en die mag in het bestandenvolume schrijven.
+          test "$(docker compose exec -T app id -un)" = "node"
+          docker compose exec -T app sh -c 'echo test > /data/bestanden/.schrijftest && rm /data/bestanden/.schrijftest'
+
+      - name: Back-up en terugzetten zoals in docs/installatie.md (R-19)
+        run: |
+          # Iets om terug te vinden: een tag en een artikel (gevonden via full-text).
+          sql "$(cat <<'SQL'
+          DECLARE @u nvarchar(36) = LOWER(CONVERT(nvarchar(36), NEWID()));
+          INSERT INTO dbo.auth_users ("id", "name", "email", "emailVerified") VALUES (@u, N'CI', N'ci@voorbeeld.be', 0);
+          INSERT INTO dbo.profiles ("id", "email", "display_name") VALUES (@u, N'ci@voorbeeld.be', N'CI');
+          INSERT INTO dbo.articles ("id", "title", "slug", "content_text", "status", "author_id")
+            VALUES (LOWER(CONVERT(nvarchar(36), NEWID())), N'Terugzetproef', N'terugzetproef', N'Een tekst over terugzetproeven.', N'published', @u);
+          INSERT INTO dbo.tags ("id", "name", "slug") VALUES (LOWER(CONVERT(nvarchar(36), NEWID())), N'Back-uptest', N'back-uptest');
+          SQL
+          )"
+          gevonden() { sql "SELECT COUNT(*) FROM dbo.articles WHERE CONTAINS(search_text, N'FORMSOF(INFLECTIONAL, terugzetproef)')" | tr -d '\r'; }
+          for i in $(seq 1 60); do test "$(gevonden)" = "1" && break; sleep 1; done
+          test "$(gevonden)" = "1"
+
+          docker compose exec -T db sh -c '/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -b -i /init/backup.sql'
+          docker compose cp db:/var/opt/mssql/backup/kennisbank.bak kennisbank.bak
+          chmod 600 kennisbank.bak
+
+          # Gegevens "kwijtraken", dan terugzetten.
+          sql "DELETE FROM dbo.tags; DELETE FROM dbo.articles;"
+          test "$(sql "SELECT COUNT(*) FROM dbo.tags" | tr -d '\r')" = "0"
+          docker compose stop app
+          docker compose cp kennisbank.bak db:/var/opt/mssql/backup/kennisbank.bak
+          docker compose exec -T -u root db chown mssql /var/opt/mssql/backup/kennisbank.bak
+          docker compose exec -T db sh -c '/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -b -i /init/terugzetten.sql'
+          docker compose up -d
+
+          # Alles terug: de tag, en full-text vindt het artikel weer.
+          test "$(sql "SELECT COUNT(*) FROM dbo.tags WHERE slug = N'back-uptest'" | tr -d '\r')" = "1"
+          for i in $(seq 1 120); do test "$(gevonden)" = "1" && break; sleep 1; done
+          test "$(gevonden)" = "1"
+          # db-init koppelde de app-gebruiker opnieuw aan zijn login (ALTER USER … WITH LOGIN).
+          docker compose logs db-init | grep -q "zijn klaar"
+          for i in $(seq 1 60); do
+            if curl -fs http://localhost:3000/api/gezondheid; then echo; exit 0; fi
+            sleep 2
+          done
+          echo "Niet gezond na het terugzetten"; curl -s http://localhost:3000/api/gezondheid; exit 1
+
+      - name: SQL Server herstarten terwijl de app draait (R-10)
+        run: |
+          docker compose restart db
+          for i in $(seq 1 90); do
+            if curl -fs http://localhost:3000/api/gezondheid > /dev/null; then echo "weer gezond na ongeveer $((i * 2)) s"; exit 0; fi
+            sleep 2
+          done
+          echo "Niet gezond na een herstart van SQL Server"; curl -s http://localhost:3000/api/gezondheid; exit 1
+
+      - name: Logboek
+        if: always()
+        run: docker compose logs --tail 200
+
+      - name: Opruimen
+        if: always()
+        run: docker compose down -v; rm -f .env kennisbank.bak gezondheid.json status.html

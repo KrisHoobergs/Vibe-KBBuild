@@ -17,7 +17,8 @@
     "db:mssql:controle": "tsx --conditions=react-server scripts/mssql-controle.mts",
     "db:test:migraties:mssql": "tsx --conditions=react-server scripts/test-migraties-mssql.mts",
     "db:test:mssql": "tsx --conditions=react-server scripts/test-datalaag-mssql.mts",
-    "test:login:mssql": "tsx --conditions=react-server scripts/test-login-mssql.mts"
+    "test:login:mssql": "tsx --conditions=react-server scripts/test-login-mssql.mts",
+    "test:fulltext:mssql": "tsx --conditions=react-server scripts/test-fulltext-mssql.mts"
   },
   "engines": {
     "node": ">=22"
