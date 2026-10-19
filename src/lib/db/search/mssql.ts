@@ -162,7 +162,7 @@ async function zoekMetLike(db: Db, v: Vraag, plan: LikePlan): Promise<ZoekRij[]>
  * worden gesplitst ("bank" vindt "kennisbank"); een net opgeslagen artikel is
  * pas na enkele seconden vindbaar (full-text); gelijke rang heeft een vaste
  * volgorde; op SQL Server 2016–2022 vindt een woord ook alle woorden die met
- * zijn ruwe stam beginnen ("artikelen" vindt "artikel", maar ook "artikelsgewijs").
+ * zijn ruwe stam beginnen ("artikelen" vindt "artikel", "regel" ook "regelmatig").
  */
 export async function zoekMssql(db: Db, params: ZoekParams): Promise<ZoekRij[]> {
   const groepen = parseZoekvraag(params.query);

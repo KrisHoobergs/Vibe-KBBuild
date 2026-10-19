@@ -29,8 +29,9 @@ installaties die `main` volgen.
   zonder wachtwoorden of adressen te tonen. Voor scripts: `/api/gezondheid`
   (JSON).
 - **Database bijwerken:** met `DB_AUTO_MIGRATE=true` gebeurt dat bij het
-  opstarten (is de database dan nog niet bereikbaar, dan probeert de app het
-  elke minuut opnieuw); anders met `npm run db:migrate`. Op een
+  opstarten (is de database dan nog niet bereikbaar of, bij SQL Server, nog
+  aan het herstellen, dan probeert de app het elke minuut opnieuw); anders
+  met `npm run db:migrate`. Op een
   Supabase-database weigert dat altijd.
 - **Bewaar de instellingen veilig**, vooral `MAIL_ENCRYPTION_KEY`: zonder
   dezelfde sleutel zijn de opgeslagen Gmail-wachtwoorden na het terugzetten
@@ -334,17 +335,22 @@ en met de eigen login: op Vercel weigert de app SQL Server.
 **Welke SQL Server?**
 
 - **Versie:** SQL Server 2016 of nieuwer, op Windows of Linux. Aanbevolen:
-  **2025**. Op 2016 tot en met 2022 zoekt de app minder goed in het
-  Nederlands (zie *Zoeken en andere verschillen*).
+  **2025**. Op 2016 tot en met 2022 kent het zoeken geen andere vormen van
+  een woord (zie *Zoeken en andere verschillen*).
 - **Editie:** **Express** is gratis, ook voor productie, maar een database
   mag er hoogstens 50 GB groot worden (tot en met SQL Server 2022: 10 GB).
   Bewaar de bestanden (afbeeldingen, video's) dan in een map
   (`STORAGE_DRIVER=filesystem`), niet in de database. Standard en Enterprise
   hebben die grens niet. *Developer* is gratis, maar mag niet voor productie.
 - **Full-Text Search**, een apart onderdeel van SQL Server, is sterk
-  aanbevolen: daarmee vindt het zoeken ook andere vormen van een woord
-  (`artikel` ↔ `artikelen`, `lopen` ↔ `liep`). Zonder werkt het zoeken
-  eenvoudiger (zie E2, stap 1).
+  aanbevolen: het zoeken is er sneller mee, rangschikt beter en splitst
+  samengestelde woorden (`bank` vindt `kennisbank`). Op **SQL Server 2025**
+  vindt het ook andere vormen van een woord (`artikel` ↔ `artikelen`,
+  `lopen` ↔ `liep`). Op 2016 tot en met 2022 niet: in onze tests (SQL
+  Server 2022 op Linux) vond full-text daar alleen het woord zelf. De app
+  zoekt daar daarom ook op het begin van het woord zonder `-en`/`-s`, zodat
+  `artikelen` toch `artikel` vindt (`liep` vindt `lopen` niet). Zonder
+  full-text werkt het zoeken eenvoudiger (zie E2, stap 1).
 - **Azure SQL** zou moeten werken (`MSSQL_AUTH=azure-default`), maar is niet
   getest.
 
@@ -447,7 +453,16 @@ docker compose -f docker-compose.mssql.yml exec -T app tar xzf /tmp/bestanden.tg
 ```
 
 Bij `up -d` koppelt `db-init` de gebruiker van de app weer aan zijn login.
-Zo werkt ook een back-up van een andere server.
+Zo werkt ook een back-up van een andere server: van een andere
+Docker-installatie (E1), of van een SQL Server op Windows (E2) als de
+database daar met stap 4 gemaakt is. `terugzetten.sql` zet de bestanden
+altijd in de map van de container (`RESTORE … WITH MOVE`). Meldt het
+terugzetten *Logical file … is not part of database*, dan heeft de database
+in de back-up andere bestandsnamen: bekijk ze met
+`RESTORE FILELISTONLY FROM DISK = N'/var/opt/mssql/backup/kennisbank.bak'` en
+pas de twee `MOVE`-regels in `docker/mssql-init/terugzetten.sql` aan. Een
+back-up van een oudere versie van SQL Server kan naar een nieuwere, niet
+omgekeerd.
 
 **Logboek:** `docker compose -f docker-compose.mssql.yml logs --tail 200 app`
 (SQL Server zelf: `… logs --tail 200 db`).
@@ -493,6 +508,11 @@ Server, of op een andere.
    maakt de kennisbank de zoekindex bij de volgende start
    (`DB_AUTO_MIGRATE=true`, dus `nssm restart Kennisbank`) of met
    `npm run db:migrate` (zie stap 8). Binnen 5 minuten zoekt ze er dan mee.
+
+   Op SQL Server 2016 tot en met 2022 levert full-text vooral snelheid en
+   een betere rangschikking op, geen andere woordvormen (zie *Zoeken en
+   andere verschillen*). `/status` meldt dat dan onder *Aandachtspunten SQL
+   Server*.
 
 2. **SQL-logins toestaan** (*mixed mode*; op Linux staat dat al goed). In
    SSMS: rechtsklik op de server → *Properties* → *Security* → **SQL Server
@@ -560,9 +580,12 @@ Server, of op een andere.
      alle databases, laat die regel dan weg.
    - `CHECK_EXPIRATION = OFF`: het wachtwoord verloopt niet. Anders werkt de
      kennisbank op een dag plots niet meer.
-   - Het wachtwoord: minstens drie soorten tekens (hoofdletters, kleine
-     letters, cijfers, leestekens). Vermijd `'`, `"`, `$` en spaties: die
-     geven problemen in de commando's van stap 7 en 8.
+   - Het wachtwoord: gebruik alleen hoofdletters, kleine letters en cijfers,
+     zoals in D (die drie soorten volstaan voor `CHECK_POLICY`), en maak het
+     lang genoeg, bv. 24 tekens. Leestekens zoals `;`, `&`, `|`, `(`, `)`,
+     `{`, `}`, `,` en de backtick breken de PowerShell-commando's van stap 7
+     en 8 (soms zonder foutmelding: dan staat er een ander wachtwoord in de
+     dienst); `'`, `"`, `$` en spaties ook.
    - De rechten: `db_ddladmin` om tabellen en de zoekindex aan te maken en bij
      te werken (bij de installatie en na een update), `db_datareader` en
      `db_datawriter` voor de gegevens. Geen `db_owner`, geen `sysadmin`, geen
@@ -716,11 +739,24 @@ Alleen gelezen bij `DB_DIALECT=mssql`.
 
 ### Zoeken en andere verschillen met PostgreSQL
 
-**Met Full-Text Search** (*Zoeken: Full-text* op `/status`) werkt zoeken
-zoals bij PostgreSQL: andere vormen van een woord tellen mee (`artikelen`
-vindt `artikel`), hoofdletters en accenten niet (`cafe` vindt `café`), met
-`"…"` zoek je een exacte zin, met `-woord` sluit je uit en met `or` zoek je
-het ene of het andere. De verschillen:
+**Met Full-Text Search op SQL Server 2025** (*Zoeken: Full-text* op
+`/status`) werkt zoeken zoals bij PostgreSQL: andere vormen van een woord
+tellen mee (`artikelen` vindt `artikel`, `liep` vindt `lopen`), hoofdletters
+en accenten niet (`cafe` vindt `café`), met `"…"` zoek je een exacte zin,
+met `-woord` sluit je uit en met `or` zoek je het ene of het andere.
+
+**Met Full-Text Search op SQL Server 2016 tot en met 2022** kent de
+Nederlandse woordenlijst van SQL Server geen andere vormen van een woord. In
+onze tests (SQL Server 2022 op Linux; Windows niet getest) vond full-text
+daar alleen het woord zelf en de delen van samengestelde woorden, zonder op
+accenten te letten. De app vult dat aan: een woord van minstens 4 letters
+vindt ook woorden die beginnen met dat woord zonder `-en` of `-s`. Zo vindt
+`artikelen` ook `artikel` en `artikel` ook `artikelen`, maar `liep` vindt
+`lopen` niet, en soms vindt een woord meer dan verwacht (`regel` vindt ook
+`regelmatig`). `/status` meldt dit onder *Aandachtspunten SQL Server*.
+Gebruik daarom bij voorkeur SQL Server 2025.
+
+Verschillen met PostgreSQL, met Full-Text Search op elke versie:
 
 - Een zoekvraag met alleen uitsluitingen (`-concept`) vindt niets.
 - Een `"zin tussen aanhalingstekens"` moet exact zo voorkomen, zonder andere
@@ -730,16 +766,14 @@ het ene of het andere. De verschillen:
   vindbaar.
 - Artikels met dezelfde score staan in een vaste volgorde (laatst gewijzigd
   eerst).
-- SQL Server 2016 tot en met 2022 kent het Nederlands minder goed. In onze
-  tests (SQL Server 2022 op Linux) vond zoeken daar geen andere vormen van
-  een woord, alleen het woord zelf en de delen van samengestelde woorden.
-  Gebruik daarom bij voorkeur SQL Server 2025.
 
 **Zonder Full-Text Search** (*Zoeken: Eenvoudig*) zoekt de app naar (delen
 van) woorden. Hoofdletters en accenten tellen niet. `artikelen` vindt ook
 `artikel` (de app laat `-en` en `-s` weg), `kat` vindt ook `kater`, maar
 `liep` vindt `lopen` niet. Met veel artikels is dat ook trager. Oplossing:
-Full-Text Search installeren (E2, stap 1).
+Full-Text Search installeren (E2, stap 1). Op SQL Server 2025 vindt zoeken
+dan ook andere woordvormen; op 2016 tot en met 2022 is het vooral sneller en
+rangschikt het beter.
 
 **Verder:**
 
@@ -876,19 +910,21 @@ login (`[server]`, `[gebruiker]`). Het foutlogboek van SQL Server zelf (SSMS:
 
 | Melding of symptoom | Oorzaak en oplossing |
 |---|---|
-| Configuratie: *MSSQL_… ontbreekt*, *Geef een poort óf een instantienaam op*, *MSSQL_ENCRYPT=false mag alleen …* | De melding noemt de instelling. Zie *Alle SQL Server-instellingen* (E). `MSSQL_ENCRYPT=false` mag alleen als SQL Server op dezelfde machine staat; laat het anders weg. |
+| Configuratie: *MSSQL_… ontbreekt*, *Geef een poort óf een instantienaam op*, *MSSQL_ENCRYPT=false mag alleen …*, *… heeft geen zin met MSSQL_TRUST_SERVER_CERT=true* | De melding noemt de instelling. Zie *Alle SQL Server-instellingen* (E). `MSSQL_ENCRYPT=false` mag alleen als SQL Server op dezelfde machine staat; laat het anders weg. `MSSQL_CA` en `MSSQL_TLS_SERVERNAME` dienen om het certificaat te controleren: laat dan `MSSQL_TRUST_SERVER_CERT` weg. |
 | Configuratie: *SQL Server wordt op Vercel niet ondersteund* | Klopt: host de kennisbank zelf (E1 of E2). |
-| Database: *code ELOGIN … Login failed for user '[gebruiker]'* | Dezelfde melding voor verschillende oorzaken. Het foutlogboek van SQL Server toont fout 18456 met een *state*: 8 = verkeerd wachtwoord (`MSSQL_PASSWORD`), 5 = de login bestaat niet (`MSSQL_USER`), 58 = SQL-logins staan uit (E2, stap 2). Staat er vlak ervoor fout 4060, dan bestaat de database uit `MSSQL_DATABASE` niet, of heeft de login er geen gebruiker in (E2, stap 4; na het terugzetten op een andere server: `ALTER USER … WITH LOGIN`). Docker: na een wijziging van `MSSQL_APP_PASSWORD` in `.env` `up -d` gebruiken, niet `restart`. |
-| Database: *code ESOCKET … Failed to connect to [server]:1433 - connect ECONNREFUSED* of *code ETIMEOUT* | SQL Server is niet bereikbaar: de dienst draait niet, TCP/IP staat uit of luistert op een andere poort (E2, stap 3), de firewall houdt het tegen, of `MSSQL_SERVER`/`MSSQL_PORT` is fout. Test vanaf de server van de kennisbank: `Test-NetConnection <server> -Port 1433` (PowerShell) moet *TcpTestSucceeded : True* geven. |
-| Database: *code EINSTLOOKUP … SQL Server Browser* | Een instantienaam zonder poort, maar de dienst *SQL Server Browser* draait niet of UDP 1434 is dicht. Beter: een vaste poort (E2, stap 3) en `MSSQL_SERVER` zonder instantienaam. |
-| Database: *code ESOCKET … self-signed certificate*, *certificate has expired* of *… is not in the cert's altnames* | Het certificaat van SQL Server wordt gecontroleerd (`MSSQL_TRUST_SERVER_CERT=false`, `MSSQL_ENCRYPT=strict` of `MSSQL_CA`), maar klopt niet. Laat IT een echt certificaat op SQL Server zetten, zet de naam uit het certificaat in `MSSQL_TLS_SERVERNAME`, geef de CA in `MSSQL_CA`, of laat die instellingen weg (wel versleuteld, zonder controle). |
+| Database: *code ELOGIN … Login failed for user '[gebruiker]'* | Dezelfde melding voor verschillende oorzaken. Het foutlogboek van SQL Server toont fout 18456 met een *state*: 8 = verkeerd wachtwoord (`MSSQL_PASSWORD`), 5 = de login bestaat niet (`MSSQL_USER`), 58 = SQL-logins staan uit (E2, stap 2). Staat er vlak ervoor fout 4060, dan bestaat de database uit `MSSQL_DATABASE` niet, of heeft de login er geen gebruiker in (E2, stap 4; na het terugzetten op een andere server: `ALTER USER … WITH LOGIN`), of was de database nog aan het herstellen (vlak na een herstart van SQL Server; dan probeert de app het migreren elke minuut opnieuw). Docker: na een wijziging van `MSSQL_APP_PASSWORD` in `.env` `up -d` gebruiken, niet `restart`. |
+| Database: *code ESOCKET … Failed to connect to [server] - connect ECONNREFUSED [server]* of *code ETIMEOUT … Failed to connect to [server] in 15000ms* | SQL Server is niet bereikbaar: de dienst draait niet, TCP/IP staat uit of luistert op een andere poort (E2, stap 3), de firewall houdt het tegen, of `MSSQL_SERVER`/`MSSQL_PORT` is fout. Test vanaf de server van de kennisbank: `Test-NetConnection <server> -Port 1433` (PowerShell) moet *TcpTestSucceeded : True* geven. Met een instantienaam zonder poort (`host\INSTANTIE` of `MSSQL_INSTANCE`) betekent ETIMEOUT meestal dat de dienst *SQL Server Browser* niet draait of UDP 1434 dicht is. Beter: een vaste poort (E2, stap 3) en `MSSQL_SERVER` zonder instantienaam. |
+| Database: *code EINSTLOOKUP … Port for [instantie] not found in [server]* | *SQL Server Browser* antwoordt, maar kent die instantie niet: de instantienaam is fout (`MSSQL_INSTANCE` of `host\INSTANTIE`), of TCP/IP staat uit voor die instantie (E2, stap 3). Beter: een vaste poort en `MSSQL_SERVER` zonder instantienaam. |
+| Database: *code EINSTLOOKUP … getaddrinfo ENOTFOUND [server]* of *code ESOCKET … getaddrinfo ENOTFOUND [server]* | De servernaam in `MSSQL_SERVER` bestaat niet (tikfout, of de server van de kennisbank vindt die naam niet in DNS). |
+| Database: *code ESOCKET … self-signed certificate*, *unable to get local issuer certificate*, *certificate has expired* of *… is not in the cert's altnames* | Het certificaat van SQL Server wordt gecontroleerd (`MSSQL_TRUST_SERVER_CERT=false`, `MSSQL_ENCRYPT=strict`, `MSSQL_CA` of `MSSQL_TLS_SERVERNAME`), maar klopt niet. Laat IT een echt certificaat op SQL Server zetten, zet de naam uit het certificaat in `MSSQL_TLS_SERVERNAME`, geef de CA in `MSSQL_CA`, of laat die instellingen weg (wel versleuteld, zonder controle). |
 | Database: *code EENCRYPT* | `MSSQL_ENCRYPT=false`, maar SQL Server eist versleuteling. Laat `MSSQL_ENCRYPT` weg. |
 | Database: *NOCOUNT staat aan in de serverinstellingen (user options)* | IT heeft NOCOUNT voor alle verbindingen aangezet; de app ziet dan niet of opslaan gelukt is. Laat IT bit 512 uit de serverinstelling *user options* halen (`sp_configure 'user options'`). |
 | Database: *SQL Server 2016 of nieuwer nodig* | De server is te oud. |
 | Migraties: *nr 262 … permission denied* | De login van de app mag geen tabellen maken (geen `db_ddladmin`). Geef die rol (E2, stap 4), of laat IT `npm run db:migrate` uitvoeren met een login die het wel mag (E2, stap 8). |
 | Aandachtspunten: *READ_COMMITTED_SNAPSHOT staat uit* | Werkt, maar wie leest, moet soms wachten op wie schrijft. Stop de kennisbank, voer als beheerder `ALTER DATABASE [kennisbank] SET READ_COMMITTED_SNAPSHOT ON WITH ROLLBACK IMMEDIATE;` uit en start ze weer. |
-| *Zoeken: Eenvoudig*, met *Full-text search is niet geïnstalleerd* | Installeer Full-Text Search (E2, stap 1) en herstart de kennisbank (met `DB_AUTO_MIGRATE=true`) of voer `npm run db:migrate` uit. |
+| *Zoeken: Eenvoudig*, met *Full-text search is niet geïnstalleerd: zoeken zonder vervoegingen* (2025) of *…: eenvoudig zoeken* (2016 tot en met 2022) | Installeer Full-Text Search (E2, stap 1) en herstart de kennisbank (met `DB_AUTO_MIGRATE=true`) of voer `npm run db:migrate` uit. Op 2016 tot en met 2022 maakt dat zoeken sneller en de volgorde beter, maar geeft het geen andere woordvormen (zie *Zoeken en andere verschillen*). |
 | *Zoeken: Eenvoudig*, met *Er is nog geen full-text-index* | Full-Text Search is er, maar de migraties liepen nog niet opnieuw: herstart de kennisbank of voer `npm run db:migrate` uit. |
+| *Zoeken: Full-text*, met *Zoeken kent op deze SQL Server-versie geen vervoegingen (pas vanaf SQL Server 2025)* | Werkt: SQL Server 2016 tot en met 2022 kent geen andere vormen van een woord, de app zoekt daar ook op het begin van het woord (zie *Zoeken en andere verschillen*). Alleen een update naar SQL Server 2025 lost het helemaal op. |
 | Logboek: *[zoeken] full-text-fout …, terugval op LIKE* | Full-text gaf een fout; de app zoekt dan 5 minuten eenvoudig en probeert het daarna opnieuw. Blijft het terugkomen: kijk of de dienst *SQL Full-text Filter Daemon Launcher* draait (Windows). Na het terugzetten van een back-up van een oudere SQL Server: voer in de database `ALTER FULLTEXT CATALOG kb_fulltext REBUILD;` uit. |
 | Docker: de app start niet, `docker compose -f docker-compose.mssql.yml ps -a` toont `db-init` met "Exited" en een andere code dan 0 | `docker compose -f docker-compose.mssql.yml logs db-init`. *Password validation failed*: `MSSQL_APP_PASSWORD` is te eenvoudig. *mag geen ' of " bevatten*: kies een ander wachtwoord. Verander het in `.env` en voer `up -d` opnieuw uit. |
 | Docker: `db` stopt meteen of wordt nooit "healthy" | `docker compose -f docker-compose.mssql.yml logs db`. Bij de eerste start: `MSSQL_SA_PASSWORD` voldoet niet aan de regels (te kort of te eenvoudig), of de server heeft te weinig geheugen (minstens 2 GB voor SQL Server). Later: `MSSQL_SA_PASSWORD` in `.env` is gewijzigd, maar dat van de eerste start blijft gelden: zet het oude terug. |
