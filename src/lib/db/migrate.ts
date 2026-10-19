@@ -1,4 +1,5 @@
 import { sql, type Kysely } from "kysely";
+import { losseFouten } from "./dialect";
 
 // Kleine migratierunner voor installaties zonder Supabase (gewone PostgreSQL en
 // SQL Server). Supabase-installaties gebruiken deze runner NOOIT: daar blijven
@@ -7,14 +8,20 @@ import { sql, type Kysely } from "kysely";
 // Migraties zijn TS-modules, zodat ze mee in de build zitten. Een migratie die
 // niet in een transactie kan (bv. full-text-DDL op SQL Server) zet
 // `transactioneel: false`.
+//
+// Een migratie kan "overgeslagen" teruggeven als de server iets mist dat ze
+// nodig heeft (bv. Full-Text Search op SQL Server). Ze wordt dan NIET bewaard
+// in kb_migrations, zodat ze de volgende keer opnieuw geprobeerd wordt.
 
 export type Dialect = "postgres" | "mssql";
 
 export type Migratie = {
   naam: string;
   transactioneel: boolean;
+  /** Uitleg voor het log als up() "overgeslagen" teruggeeft. */
+  overslaanReden?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  up(db: Kysely<any>): Promise<void>;
+  up(db: Kysely<any>): Promise<void | "overgeslagen">;
 };
 
 const TABEL = "kb_migrations";
@@ -29,14 +36,19 @@ async function zorgVoorTabel(db: Kysely<any>, dialect: Dialect) {
       )
     `.execute(db);
   } else {
+    // nvarchar, zoals elke tekstsleutel op SQL Server (tedious stuurt strings als nvarchar).
     await sql`
       IF OBJECT_ID(N'dbo.kb_migrations', N'U') IS NULL
       CREATE TABLE dbo.kb_migrations (
-        naam VARCHAR(200) NOT NULL CONSTRAINT PK_kb_migrations PRIMARY KEY,
-        uitgevoerd_op DATETIME2(3) NOT NULL CONSTRAINT DF_kb_migrations_op DEFAULT SYSUTCDATETIME()
+        "naam" nvarchar(200) NOT NULL CONSTRAINT PK_kb_migrations PRIMARY KEY,
+        "uitgevoerd_op" datetime2(3) NOT NULL CONSTRAINT DF_kb_migrations_op DEFAULT SYSUTCDATETIME()
       )
     `.execute(db);
   }
+}
+
+function meldOvergeslagen(migratie: Migratie, log: (bericht: string) => void) {
+  log(`Migratie ${migratie.naam} overgeslagen${migratie.overslaanReden ? `: ${migratie.overslaanReden}` : ""}`);
 }
 
 /**
@@ -101,7 +113,10 @@ async function migreerPostgres(
     for (const migratie of migraties) {
       if (gedaan.has(migratie.naam)) continue;
       log(`Migratie ${migratie.naam} …`);
-      await migratie.up(trx);
+      if ((await migratie.up(trx)) === "overgeslagen") {
+        meldOvergeslagen(migratie, log);
+        continue;
+      }
       await trx.insertInto(TABEL).values({ naam: migratie.naam }).execute();
       uitgevoerd.push(migratie.naam);
     }
@@ -109,7 +124,16 @@ async function migreerPostgres(
   return uitgevoerd;
 }
 
-/** SQL Server: per migratie, met een sessie-lock op één vaste verbinding. */
+/**
+ * SQL Server: per migratie, met een sessie-lock (sp_getapplock) op één vaste
+ * verbinding. Een transactionele migratie en haar rij in kb_migrations gaan
+ * samen in één transactie; een niet-transactionele migratie moet zelf
+ * idempotent zijn (ze wordt pas na afloop bewaard).
+ *
+ * Een tweede proces wacht hooguit 60 s op de lock (@LockTimeout); de
+ * verbinding moet dus een request-timeout van meer dan 60 s hebben
+ * (auto-migrate.ts gebruikt 300 s).
+ */
 async function migreerMssql(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   db: Kysely<any>,
@@ -137,19 +161,35 @@ async function migreerMssql(
         if (gedaan.has(migratie.naam)) continue;
 
         log(`Migratie ${migratie.naam} …`);
+        let resultaat: void | "overgeslagen";
         if (migratie.transactioneel) {
-          await conn.transaction().execute(async (trx) => {
-            await migratie.up(trx);
-            await trx.insertInto(TABEL).values({ naam: migratie.naam }).execute();
+          resultaat = await conn.transaction().execute(async (trx) => {
+            const r = await migratie.up(trx);
+            if (r !== "overgeslagen") await trx.insertInto(TABEL).values({ naam: migratie.naam }).execute();
+            return r;
           });
         } else {
-          await migratie.up(conn);
-          await conn.insertInto(TABEL).values({ naam: migratie.naam }).execute();
+          resultaat = await migratie.up(conn);
+          if (resultaat !== "overgeslagen") await conn.insertInto(TABEL).values({ naam: migratie.naam }).execute();
+        }
+        if (resultaat === "overgeslagen") {
+          meldOvergeslagen(migratie, log);
+          continue;
         }
         uitgevoerd.push(migratie.naam);
       }
     } finally {
-      await sql`EXEC sp_releaseapplock @Resource = ${TABEL}, @LockOwner = 'Session'`.execute(conn);
+      // Is de verbinding zelf weg, dan verdwijnt de sessie-lock mee met de
+      // sessie. Een fout bij het vrijgeven mag de oorspronkelijke fout dan niet
+      // verbergen.
+      try {
+        await sql`EXEC sp_releaseapplock @Resource = ${TABEL}, @LockOwner = 'Session'`.execute(conn);
+      } catch (error) {
+        const melding = losseFouten(error)
+          .map((e) => (e instanceof Error ? e.message : String(e)))
+          .join(" | ");
+        log(`Migratielock vrijgeven mislukt (${melding}); de lock verdwijnt met de verbinding`);
+      }
     }
   });
 

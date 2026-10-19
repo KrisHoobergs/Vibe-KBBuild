@@ -13,7 +13,9 @@
     "db:test": "tsx --conditions=react-server scripts/test-datalaag.mts",
     "db:migrate": "tsx scripts/db-migrate.mts",
     "test:opslag": "tsx --conditions=react-server scripts/test-opslag.mts",
-    "test:unit": "node --import tsx --test \"src/**/*.test.ts\""
+    "test:unit": "node --import tsx --test \"src/**/*.test.ts\" \"scripts/**/*.test.mts\"",
+    "db:mssql:controle": "tsx --conditions=react-server scripts/mssql-controle.mts",
+    "db:test:migraties:mssql": "tsx --conditions=react-server scripts/test-migraties-mssql.mts"
   },
   "engines": {
     "node": ">=22"
