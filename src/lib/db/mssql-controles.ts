@@ -30,7 +30,7 @@ export async function leesMssqlControles(db: Kysely<any>): Promise<MssqlControle
   const { rows } = await sql<MssqlControles>`
     SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS int) AS hoofdversie,
            CAST(SERVERPROPERTY('EngineEdition') AS int) AS editie,
-           CAST(@@OPTIONS & 512 AS int) AS nocount,
+           CAST(SIGN(@@OPTIONS & 512) AS int) AS nocount, -- 0/1 (de bit zelf is 512)
            CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS nvarchar(128)) AS collatie,
            (SELECT CAST(is_read_committed_snapshot_on AS int) FROM sys.databases WHERE database_id = DB_ID()) AS rcsi,
            CAST(FULLTEXTSERVICEPROPERTY('IsFullTextInstalled') AS int) AS fts,
