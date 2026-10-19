@@ -126,3 +126,150 @@ describe("veiligeFoutmelding: Postgres (ongewijzigd gedrag)", () => {
     assert.equal(veiligeFoutmelding(fout), "Configuratiefout: DATABASE_URL ontbreekt (postgres://… van de database)");
   });
 });
+
+// Zo maakt tedious zijn fouten: ConnectionError/RequestError zetten geen eigen
+// name (dus "Error"), wel een code; serverfouten hebben een nummer.
+const verbindingsfout = (code: string, message: string) => Object.assign(new Error(message), { code });
+const serverfout = (number: number, message: string) => Object.assign(new Error(message), { code: "EREQUEST", number });
+
+describe("veiligeFoutmelding: SQL Server (tedious)", () => {
+  const gevallen: [string, unknown, string][] = [
+    [
+      "servernaam zonder punten en poort",
+      verbindingsfout("ESOCKET", "Failed to connect to sqlsrv01:1433 - connect ECONNREFUSED 10.1.2.3:1433"),
+      "Error (code ESOCKET): Failed to connect to [server] - connect ECONNREFUSED [server]",
+    ],
+    [
+      "IPv6-adres in de socketfout",
+      verbindingsfout("ESOCKET", "Failed to connect to localhost:1 - connect ECONNREFUSED ::1:1"),
+      "Error (code ESOCKET): Failed to connect to [server] - connect ECONNREFUSED [server]",
+    ],
+    [
+      "onbekende server",
+      verbindingsfout("ESOCKET", "Failed to connect to sqlsrv01:1433 - getaddrinfo ENOTFOUND sqlsrv01"),
+      "Error (code ESOCKET): Failed to connect to [server] - getaddrinfo ENOTFOUND [server]",
+    ],
+    [
+      "host\\INSTANTIE bij een time-out",
+      verbindingsfout("ETIMEOUT", "Failed to connect to SQL01\\SQLEXPRESS in 15000ms"),
+      "Error (code ETIMEOUT): Failed to connect to [server] in 15000ms",
+    ],
+    [
+      "host\\INSTANTIE elders in de tekst",
+      verbindingsfout("ESOCKET", "Connection lost - instantie SQL01\\SQLEXPRESS gaf geen antwoord"),
+      "Error (code ESOCKET): Connection lost - instantie [server] gaf geen antwoord",
+    ],
+    [
+      "SQL Browser antwoordt niet",
+      verbindingsfout("EINSTLOOKUP", "Failed to get response from SQL Server Browser on sqlsrv01"),
+      "Error (code EINSTLOOKUP): Failed to get response from SQL Server Browser on [server]",
+    ],
+    [
+      "instantie niet gevonden",
+      verbindingsfout("EINSTLOOKUP", "Port for SQLEXPRESS not found in sqlsrv01"),
+      "Error (code EINSTLOOKUP): Port for [instantie] not found in [server]",
+    ],
+    [
+      "verkeerd wachtwoord (18456)",
+      verbindingsfout("ELOGIN", "Login failed for user 'kb'."),
+      "Error (code ELOGIN): Login failed for user '[gebruiker]'.",
+    ],
+    [
+      "verkeerd wachtwoord, Windows-account",
+      verbindingsfout("ELOGIN", "Login failed for user 'DOMEIN\\svc_kb'."),
+      "Error (code ELOGIN): Login failed for user '[gebruiker]'.",
+    ],
+    [
+      "database bestaat niet of geen toegang (4060)",
+      verbindingsfout("ELOGIN", 'Cannot open database "kennisbank" requested by the login. The login failed.'),
+      'Error (code ELOGIN): Cannot open database "[database]" requested by the login. The login failed.',
+    ],
+    [
+      "certificaat op een andere naam",
+      verbindingsfout(
+        "ESOCKET",
+        "Failed to connect to sqlsrv01:1433 - Hostname/IP does not match certificate's altnames: Host: sqlsrv01. is not in the cert's altnames: DNS:andere-naam"
+      ),
+      "Error (code ESOCKET): Failed to connect to [server] - Hostname/IP does not match certificate's altnames: Host: [server] is not in the cert's altnames: [certificaat]",
+    ],
+    [
+      "versleuteling",
+      verbindingsfout("EENCRYPT", "Server requires encryption, set 'encrypt' config option to `true`."),
+      "Error (code EENCRYPT): Server requires encryption, set 'encrypt' config option to `true`.",
+    ],
+    [
+      "serverfout met nummer",
+      serverfout(547, 'The INSERT statement conflicted with the FOREIGN KEY constraint "FK_articles_author".'),
+      'Error (code EREQUEST, nr 547): The INSERT statement conflicted with the FOREIGN KEY constraint "FK_articles_author".',
+    ],
+    [
+      "nummer zonder code",
+      Object.assign(new Error("Invalid column name 'x'."), { number: 207 }),
+      "Error (nr 207): Invalid column name 'x'.",
+    ],
+    [
+      "volledige servernaam met punten valt onder de algemene regel",
+      verbindingsfout("ESOCKET", "Failed to connect to sql01.corp.local:1433 - read ECONNRESET"),
+      "Error (code ESOCKET): Failed to connect to [server] - read ECONNRESET",
+    ],
+  ];
+
+  for (const [naam, fout, verwacht] of gevallen) {
+    it(naam, () => assert.equal(veiligeFoutmelding(fout), verwacht));
+  }
+
+  it("meerdere serverfouten (array van Kysely) worden samengevoegd", () => {
+    const fout = [
+      serverfout(1505, "The CREATE UNIQUE INDEX statement terminated because a duplicate key was found."),
+      serverfout(1750, "Could not create constraint or index. See previous errors."),
+    ];
+    assert.equal(
+      veiligeFoutmelding(fout),
+      "Error (code EREQUEST, nr 1505): The CREATE UNIQUE INDEX statement terminated because a duplicate key was found." +
+        " | Error (code EREQUEST, nr 1750): Could not create constraint or index. See previous errors."
+    );
+  });
+
+  it("een AggregateError met tedious-fouten wordt ook uitgepakt", () => {
+    const fout = new AggregateError([serverfout(2627, "Violation of UNIQUE KEY constraint 'UQ_tags_slug'."), serverfout(3621, "The statement has been terminated.")]);
+    assert.equal(
+      veiligeFoutmelding(fout),
+      "Error (code EREQUEST, nr 2627): Violation of UNIQUE KEY constraint 'UQ_tags_slug'. | Error (code EREQUEST, nr 3621): The statement has been terminated."
+    );
+  });
+
+  it("hoogstens drie fouten, de rest geteld", () => {
+    const fout = [1, 2, 3, 4, 5].map((n) => serverfout(50000 + n, `fout ${n}`));
+    assert.equal(
+      veiligeFoutmelding(fout),
+      "Error (code EREQUEST, nr 50001): fout 1 | Error (code EREQUEST, nr 50002): fout 2 | Error (code EREQUEST, nr 50003): fout 3 | … en 2 meer"
+    );
+  });
+
+  it("elke fout wordt apart ontsmet en afgekapt", () => {
+    const lang = "x".repeat(300);
+    const fout = [verbindingsfout("ELOGIN", "Login failed for user 'kb'."), serverfout(1, lang)];
+    assert.equal(
+      veiligeFoutmelding(fout),
+      `Error (code ELOGIN): Login failed for user '[gebruiker]'. | Error (code EREQUEST, nr 1): ${lang.slice(0, 200)}`
+    );
+  });
+
+  it("een lege array", () => {
+    assert.equal(veiligeFoutmelding([]), "Error");
+  });
+
+  it("lekt geen server, gebruiker of instantie", () => {
+    const geheimen = ["sqlsrv01", "SQLEXPRESS", "kb_geheime_gebruiker", "10.1.2.3"];
+    const fouten = [
+      verbindingsfout("ELOGIN", "Login failed for user 'kb_geheime_gebruiker'."),
+      verbindingsfout("ESOCKET", "Failed to connect to sqlsrv01\\SQLEXPRESS - connect ETIMEDOUT 10.1.2.3:1433"),
+      verbindingsfout("ETIMEOUT", "Failed to connect to sqlsrv01:1433 (redirected from sqlsrv01:1433) in 15000ms"),
+      verbindingsfout("EINSTLOOKUP", "Port for SQLEXPRESS not found in sqlsrv01"),
+    ];
+    for (const fout of fouten) {
+      const melding = veiligeFoutmelding(fout);
+      for (const geheim of geheimen) assert.ok(!melding.includes(geheim), `${geheim} in: ${melding}`);
+    }
+  });
+});
