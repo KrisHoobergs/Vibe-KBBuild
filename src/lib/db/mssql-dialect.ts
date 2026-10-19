@@ -27,6 +27,39 @@ export type MssqlOpties = {
 type TediousModule = typeof TediousNs;
 type TarnModule = typeof TarnNs;
 
+/**
+ * Aanmeldfouten waarbij opnieuw proberen zin heeft: de database is (nog) niet
+ * te openen, bv. nog aan het herstellen na een herstart van SQL Server (4060),
+ * of Azure SQL is even niet beschikbaar (40613, 40197, 40501, 10928, 10929).
+ * Dezelfde lijst als tedious (transient-error-lookup) en SqlClient.
+ */
+export const TIJDELIJKE_AANMELDFOUTEN: readonly number[] = [4060, 10928, 10929, 40197, 40501, 40613];
+
+/**
+ * Markeert de aanmeldfout van een tedious-verbinding als tijdelijk
+ * (isTransient) als de server bij het aanmelden een van de
+ * TIJDELIJKE_AANMELDFOUTEN stuurde. Nodig omdat SQL Server na zo'n fout nog
+ * 18456 stuurt en tedious alleen die laatste fout bewaart (ELOGIN, zonder
+ * nummer of isTransient). Een losse 18456 (verkeerd wachtwoord, login
+ * bestaat niet) blijft niet-tijdelijk: geen herhaalde pogingen en dus geen
+ * vergrendelde login. Gebruikt door isVerbindingsfout (auto-migrate.ts).
+ */
+export function markeerTijdelijkeAanmeldfout(c: TediousNs.Connection): void {
+  const nummers: number[] = [];
+  const opFout = (t: { number: number }) => void nummers.push(t.number);
+  c.on("errorMessage", opFout);
+  const connect = c.connect.bind(c);
+  c.connect = (cb) =>
+    connect((err) => {
+      // Na het aanmelden horen fouten bij een query, niet meer hierbij.
+      c.removeListener("errorMessage", opFout);
+      if (err && nummers.some((n) => TIJDELIJKE_AANMELDFOUTEN.includes(n))) {
+        (err as Error & { isTransient?: boolean }).isTransient = true;
+      }
+      cb?.(err);
+    });
+}
+
 // Subklasse, zodat `instanceof MssqlDialect` blijft kloppen (Better Auth en de
 // kysely-adapter herkennen het dialect zo).
 class LuieMssqlDialect extends MssqlDialect {
@@ -125,6 +158,8 @@ export function maakMssqlDialect(config: MssqlDbConfig, opties: MssqlOpties = {}
                 if (c.inTransaction) rollback(cb, naam);
                 else process.nextTick(cb, undefined);
               };
+              // Database nog niet te openen (4060 na een herstart, …): tijdelijk.
+              markeerTijdelijkeAanmeldfout(c);
               return c;
             },
           },

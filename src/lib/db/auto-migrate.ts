@@ -37,9 +37,12 @@ const VERBINDINGSCODES = [
  * starten voor de databasecontainer zijn netwerknaam heeft.
  *
  * SQL Server: Kysely geeft meerdere serverfouten als array; elke fout telt.
- * tedious markeert tijdelijke fouten met isTransient. "script upgrade mode"
- * (Msg 18401) is een SQL Server-container die nog aan het opstarten is. Een
- * gewone aanmeldfout (ELOGIN, verkeerd wachtwoord) faalt meteen.
+ * Tijdelijke fouten hebben isTransient: een aanmelding op een database die
+ * (nog) niet te openen is, bv. nog aan het herstellen na een herstart (4060,
+ * Azure 40613, …), markeert markeerTijdelijkeAanmeldfout (mssql-dialect.ts).
+ * "script upgrade mode" (Msg 18401) is een SQL Server-container die nog aan
+ * het opstarten is. Een gewone aanmeldfout (ELOGIN 18456, verkeerd wachtwoord)
+ * faalt meteen: herhalen zou de login kunnen vergrendelen (CHECK_POLICY).
  * Postgres geeft nooit een array, dus daar blijft de controle dezelfde.
  */
 export function isVerbindingsfout(error: unknown): boolean {

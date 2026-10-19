@@ -43,7 +43,8 @@ describe("isVerbindingsfout: SQL Server (tedious)", () => {
 
   it("een gewone aanmeldfout faalt meteen, een tijdelijke niet", () => {
     assert.equal(isVerbindingsfout(fout({ code: "ELOGIN" }, "Login failed for user 'kb'.")), false);
-    assert.equal(isVerbindingsfout(fout({ code: "ELOGIN", isTransient: true }, "Login failed.")), true);
+    // Zo ziet 4060 + 18456 eruit na markeerTijdelijkeAanmeldfout (zie mssql-dialect.test.ts).
+    assert.equal(isVerbindingsfout(fout({ code: "ELOGIN", isTransient: true }, "Login failed for user 'kb'.")), true);
     assert.equal(
       isVerbindingsfout(
         fout(
