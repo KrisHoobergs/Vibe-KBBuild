@@ -15,7 +15,9 @@
  * eerst de ontbrekende migraties uit. Alles wat de test aanmaakt, ruimt hij op.
  *
  * Optioneel MSSQL_TEST_FULLTEXT_VERWACHT=1 of 0: controleert dat de zoekfunctie
- * wel of geen full-text-index heeft (CI-varianten).
+ * wel of geen full-text-index heeft (CI-varianten). MSSQL_TEST_STEMMER_VERWACHT=0:
+ * de Nederlandse stemmer van deze server geeft geen vervoegingen (SQL Server
+ * 2022 in CI); artikel ↔ artikelen wordt dan niet gecontroleerd.
  */
 import assert from "node:assert/strict";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -25,6 +27,7 @@ import { assertMssqlTestdatabase, wachtOpZoekindex, zetMssqlTestomgeving } from 
 
 zetMssqlTestomgeving();
 const fulltextVerwacht = process.env.MSSQL_TEST_FULLTEXT_VERWACHT;
+const stemmerVerwacht = process.env.MSSQL_TEST_STEMMER_VERWACHT;
 
 const { leesConfig } = await import("../src/lib/config");
 const { maakKysely } = await import("../src/lib/db/connection");
@@ -346,8 +349,16 @@ try {
   });
 
   await stap("zoeken: vervoegingen (artikel ↔ artikelen), accenten (cafe → café, één → een)", async () => {
-    bevat(await zoek(`${merk} artikelen`), "enkelvoud", "meervoud");
-    bevat(await zoek(`${merk} artikel`), "enkelvoud", "meervoud");
+    if (fulltext && stemmerVerwacht === "0") {
+      // Server met een Nederlandse stemmer zonder vervoegingen (SQL Server 2022 in CI):
+      // alleen het woord zelf moet gevonden worden.
+      console.log("    vervoegingen niet gecontroleerd (MSSQL_TEST_STEMMER_VERWACHT=0)");
+      bevat(await zoek(`${merk} artikelen`), "meervoud");
+      bevat(await zoek(`${merk} artikel`), "enkelvoud");
+    } else {
+      bevat(await zoek(`${merk} artikelen`), "enkelvoud", "meervoud");
+      bevat(await zoek(`${merk} artikel`), "enkelvoud", "meervoud");
+    }
     bevat(await zoek(`${merk} cafe`), "cafe");
     bevat(await zoek(`${merk} één`), "kat", "hond", "vis");
   });

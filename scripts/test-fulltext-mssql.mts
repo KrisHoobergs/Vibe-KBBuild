@@ -22,6 +22,10 @@
  * Zonder die twee worden FT-2 … FT-4 overgeslagen, behalve als
  * MSSQL_TEST_FULLTEXT_VERWACHT=1 (CI): dan is dat een fout.
  *
+ * FT-2 eist vervoegingen (lopen, rood, artikel ↔ artikelen), behalve met
+ * MSSQL_TEST_STEMMER_VERWACHT=0: dan worden de vormen alleen getoond (SQL
+ * Server 2022 in CI: de stemmer geeft daar alleen het woord zelf terug).
+ *
  * Weigert elke database die niet kb_test…/kennisbank_test… heet of de
  * markering kb_testdatabase mist (scripts/lib/mssql-testomgeving.mts). Voert
  * eerst de ontbrekende migraties uit. Alles wat de test aanmaakt, ruimt hij op.
@@ -35,6 +39,7 @@ import { assertMssqlTestdatabase, wachtOpZoekindex, zetMssqlTestomgeving } from 
 
 zetMssqlTestomgeving();
 const fulltextVerwacht = process.env.MSSQL_TEST_FULLTEXT_VERWACHT;
+const stemmerVerwacht = process.env.MSSQL_TEST_STEMMER_VERWACHT;
 const beheerderUser = process.env.MSSQL_TEST_BEHEERDER_USER;
 const beheerderWachtwoord = process.env.MSSQL_TEST_BEHEERDER_PASSWORD;
 const metingenArg = process.argv.find((a) => a.startsWith("--metingen="));
@@ -187,8 +192,8 @@ const VASTE_VRAGEN = [
 
 try {
   await stap("testdatabase gecontroleerd (naam en markering kb_testdatabase)", async () => {
+    // Alleen de testlogin schrijft; de beheerder (sa) gebruikt alleen sys.dm_fts_parser.
     await assertMssqlTestdatabase(db);
-    if (beheerder) await assertMssqlTestdatabase(beheerder);
   });
 
   await stap("migraties bijgewerkt", async () => {
@@ -230,11 +235,20 @@ try {
           const { rows: onderdelen } = await sql<Record<string, unknown>>`
             EXEC sys.sp_help_fulltext_system_components 'wordbreaker'
           `.execute(beheerder);
-          const nl = onderdelen.filter((o) => Object.values(o).some((v) => v === 1043 || v === "Dutch"));
+          // Kolommen verschillen per versie; het pad (fullpath) tonen we niet.
+          const nl = onderdelen.filter((o) =>
+            Object.entries(o).some(([k, v]) => k !== "fullpath" && /^(1043|dutch|nederlands)$/i.test(String(v).trim()))
+          );
           for (const o of nl) {
-            console.log(`    woordsplitser: ${String(o.componentname ?? "?")} versie ${String(o.version ?? "?")} (${String(o.manufacturer ?? "?")})`);
+            const { fullpath: _pad, ...rest } = o;
+            void _pad;
+            console.log(`    woordsplitser: ${JSON.stringify(rest)}`);
           }
-          if (!nl.length) console.log(`    woordsplitser voor 1043 niet gevonden in ${onderdelen.length} onderdelen`);
+          if (!nl.length) {
+            console.log(
+              `    woordsplitser voor 1043 niet herkend in ${onderdelen.length} onderdelen; kolommen: ${Object.keys(onderdelen[0] ?? {}).join(", ")}`
+            );
+          }
         } catch (err) {
           console.log(`    sp_help_fulltext_system_components: fout ${foutNummers(err).join("+") || "?"}`);
         }
@@ -278,6 +292,13 @@ try {
       console.log(
         `    stemmer (SQL Server ${hoofdversie}): ${werkt ? "werkt (lopen en rood hebben vervoegingen)" : "GEEN vervoegingen voor lopen/rood"}`
       );
+      // Elk woord geeft minstens zichzelf terug.
+      for (const [w, v] of Object.entries(vormen)) assert.ok(v.includes(w), `${w} ontbreekt in zijn eigen vormen`);
+      if (stemmerVerwacht === "0") {
+        console.log("    vervoegingen niet geëist (MSSQL_TEST_STEMMER_VERWACHT=0)");
+        return;
+      }
+      assert.ok(werkt, "de stemmer geeft geen vervoegingen (zet MSSQL_TEST_STEMMER_VERWACHT=0 als dat zo hoort)");
       // De app rekent op artikel ↔ artikelen (FT-9 in db:test:mssql).
       assert.ok(vormen.artikelen.includes("artikel"), "artikelen → artikel ontbreekt");
       assert.ok(vormen.artikel.includes("artikelen"), "artikel → artikelen ontbreekt");

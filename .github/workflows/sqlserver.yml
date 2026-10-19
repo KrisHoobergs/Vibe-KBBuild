@@ -39,6 +39,11 @@ on:
 permissions:
   contents: read
 
+# bash met pipefail (zonder shell: alleen bash -e): een fout vóór een | telt mee.
+defaults:
+  run:
+    shell: bash
+
 # Een nieuwe push op dezelfde branch of PR maakt de vorige run overbodig.
 concurrency:
   group: sqlserver-${{ github.ref }}
@@ -60,6 +65,7 @@ jobs:
             pid: Developer
             rcsi: "ON"
             fulltext: "1"
+            stemmer: "1"
           - naam: 2025 + full-text, Express, RCSI uit
             runner: ubuntu-24.04
             image: fts
@@ -67,6 +73,7 @@ jobs:
             pid: Express
             rcsi: "OFF"
             fulltext: "1"
+            stemmer: "1"
           # De Nederlandse stemmer van 2016-2022 (versie 1) is een andere dan die van 2025.
           # Zowel de argumenten voor Dockerfile als die voor Dockerfile.apt (de andere negeert docker).
           - naam: 2022 + full-text, Developer, RCSI aan
@@ -83,6 +90,9 @@ jobs:
             pid: Developer
             rcsi: "ON"
             fulltext: "1"
+            # Op SQL Server 2022 (Linux) geeft de Nederlandse stemmer geen vervoegingen
+            # (FORMSOF(INFLECTIONAL, "artikelen") = alleen artikelen): zoeken vindt dan alleen het woord zelf.
+            stemmer: "0"
           - naam: 2025 zonder full-text (LIKE)
             runner: ubuntu-24.04
             image: mcr.microsoft.com/mssql/server:2025-CU9-GDR1-ubuntu-24.04
@@ -90,6 +100,7 @@ jobs:
             pid: Developer
             rcsi: "ON"
             fulltext: "0"
+            stemmer: ""
     env:
       MSSQL_TEST_SERVER: 127.0.0.1
       MSSQL_TEST_PORT: "1433"
@@ -98,6 +109,7 @@ jobs:
       MSSQL_TEST_ENCRYPT: "true"
       MSSQL_TEST_TRUST_SERVER_CERT: "true"
       MSSQL_TEST_FULLTEXT_VERWACHT: ${{ matrix.fulltext }}
+      MSSQL_TEST_STEMMER_VERWACHT: ${{ matrix.stemmer }}
       # sys.dm_fts_parser (FT-2 … FT-4) vraagt sysadmin.
       MSSQL_TEST_BEHEERDER_USER: sa
       FTS_DOCKERFILE: ${{ inputs.fts-dockerfile || 'Dockerfile' }}
@@ -124,10 +136,11 @@ jobs:
             echo "MSSQL_TEST_BEHEERDER_PASSWORD=$sa"
           } >> "$GITHUB_ENV"
           # sqlcmd in de container, als sa; het wachtwoord via de omgeving, niet op de opdrachtregel.
+          # -I: QUOTED_IDENTIFIER aan (sqlcmd zet het standaard uit), zoals de app.
           mkdir -p "$RUNNER_TEMP/bin"
           cat > "$RUNNER_TEMP/bin/sqlcmd-sa" <<'EOF'
           #!/usr/bin/env bash
-          exec docker exec -e SQLCMDPASSWORD="$SA_WACHTWOORD" mssql /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa "$@"
+          exec docker exec -e SQLCMDPASSWORD="$SA_WACHTWOORD" mssql /opt/mssql-tools18/bin/sqlcmd -C -I -S localhost -U sa "$@"
           EOF
           chmod +x "$RUNNER_TEMP/bin/sqlcmd-sa"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
@@ -244,11 +257,12 @@ jobs:
             echo "MAIL_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '\n')"
           } > .env
           # sqlcmd als sa in de container db (wachtwoord uit de omgeving van die container).
+          # -I: QUOTED_IDENTIFIER aan (sqlcmd zet het standaard uit; nodig voor "kolom"-namen).
           mkdir -p "$RUNNER_TEMP/bin"
           cat > "$RUNNER_TEMP/bin/sql" <<'EOF'
           #!/usr/bin/env bash
           # Gebruik: sql "<T-SQL>"  → resultaat zonder kopregels, als sa in de database kennisbank.
-          exec docker compose exec -T db sh -c '/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -b -d kennisbank -h -1 -W -Q "$0"' "SET NOCOUNT ON; $1"
+          exec docker compose exec -T db sh -c '/opt/mssql-tools18/bin/sqlcmd -C -I -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -b -d kennisbank -h -1 -W -Q "$0"' "SET NOCOUNT ON; $1"
           EOF
           chmod +x "$RUNNER_TEMP/bin/sql"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"

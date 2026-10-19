@@ -60,8 +60,10 @@ SELECT name, CAST(value_in_use AS int) AS waarde
 FROM sys.configurations
 WHERE name IN (N'user options', N'default language', N'default full-text language',
                N'contained database authentication', N'max server memory (MB)');
-SELECT @@OPTIONS & 512 AS nocount_staat_standaard_aan,  -- moet 0 zijn (anders telt de app geen gewijzigde rijen)
-       @@LANGUAGE      AS taal_van_deze_sessie;
+-- Uit de serverinstelling, niet uit @@OPTIONS: dit script zet zelf SET NOCOUNT ON.
+SELECT (SELECT CAST(value_in_use AS int) & 512 FROM sys.configurations WHERE name = N'user options')
+         AS nocount_staat_standaard_aan,  -- moet 0 zijn (anders telt de app geen gewijzigde rijen)
+       @@LANGUAGE AS taal_van_deze_sessie;
 
 PRINT N'== 5. Full-text search';
 IF FULLTEXTSERVICEPROPERTY('IsFullTextInstalled') = 1
