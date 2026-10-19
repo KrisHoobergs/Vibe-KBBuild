@@ -399,6 +399,17 @@ describe("leesConfig: SQL Server", () => {
       { ...BASIS, MSSQL_CA: pem, MSSQL_TRUST_SERVER_CERT: "true" },
       "MSSQL_CA heeft geen zin met MSSQL_TRUST_SERVER_CERT=true (dan wordt het certificaat niet gecontroleerd)"
     );
+    // Een TLS-servernaam alleen betekent ook: controleren (tegen die naam).
+    const metNaam = mssql({ ...BASIS, MSSQL_SERVER: "10.0.0.5", MSSQL_TLS_SERVERNAME: "sql.voorbeeld.be" });
+    assert.deepEqual(
+      [metNaam.encrypt, metNaam.trustServerCertificate, metNaam.tlsServerName],
+      [true, false, "sql.voorbeeld.be"]
+    );
+    assert.equal(mssql({ ...BASIS, MSSQL_ENCRYPT: "strict", MSSQL_TLS_SERVERNAME: "sql.voorbeeld.be" }).trustServerCertificate, false);
+    weigert(
+      { ...BASIS, MSSQL_TLS_SERVERNAME: "sql.voorbeeld.be", MSSQL_TRUST_SERVER_CERT: "true" },
+      "MSSQL_TLS_SERVERNAME heeft geen zin met MSSQL_TRUST_SERVER_CERT=true (dan wordt het certificaat niet gecontroleerd)"
+    );
     weigert({ ...BASIS, MSSQL_ENCRYPT: "ja" }, 'MSSQL_ENCRYPT: Invalid option: expected one of "true"|"false"|"strict"');
     weigert(
       { ...BASIS, MSSQL_TRUST_SERVER_CERT: "ja" },

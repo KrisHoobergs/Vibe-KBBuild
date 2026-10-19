@@ -709,9 +709,9 @@ Alleen gelezen bij `DB_DIALECT=mssql`.
 | `MSSQL_DOMAIN` | – | Het domein bij `ntlm`, als `MSSQL_USER` geen `DOMEIN\` bevat. |
 | `MSSQL_AZURE_CLIENT_ID` | – | Alleen bij `azure-default`: de client-id van een user-assigned managed identity. |
 | `MSSQL_ENCRYPT` | `true` | `true`: versleuteld. `strict`: versleuteld vanaf de eerste byte (TDS 8, SQL Server 2022 en nieuwer, Azure), en controleert het certificaat altijd. `false`: onversleuteld, alleen toegestaan als SQL Server op dezelfde machine staat. |
-| `MSSQL_TRUST_SERVER_CERT` | `true` | `true`: het certificaat van SQL Server wordt niet gecontroleerd (zoals `DATABASE_SSL=no-verify`). `false`: wel controleren. Dat vraagt een echt certificaat op SQL Server, of `MSSQL_CA`. Standaard `false` met `MSSQL_CA` of `strict`. |
+| `MSSQL_TRUST_SERVER_CERT` | `true` | `true`: het certificaat van SQL Server wordt niet gecontroleerd (zoals `DATABASE_SSL=no-verify`). `false`: wel controleren. Dat vraagt een echt certificaat op SQL Server, of `MSSQL_CA`. Standaard `false` met `MSSQL_CA`, `MSSQL_TLS_SERVERNAME` of `strict`. |
 | `MSSQL_CA` | – | Het CA-certificaat (PEM-tekst of base64) waarmee het certificaat van SQL Server gecontroleerd wordt. Niet samen met `MSSQL_TRUST_SERVER_CERT=true`. |
-| `MSSQL_TLS_SERVERNAME` | – | De naam in het certificaat, als je via een IP-adres of een andere naam verbindt. |
+| `MSSQL_TLS_SERVERNAME` | – | De naam in het certificaat, als je via een IP-adres of een andere naam verbindt. Zet de controle van het certificaat aan; niet samen met `MSSQL_TRUST_SERVER_CERT=true`. |
 | `DATABASE_POOL_MAX` | `5` | Hoeveel verbindingen de app tegelijk mag openen. |
 
 ### Zoeken en andere verschillen met PostgreSQL

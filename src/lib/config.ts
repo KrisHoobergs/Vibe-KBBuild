@@ -273,15 +273,24 @@ function leesMssqlConfig(env: Record<string, string | undefined>, poolMax: numbe
       "MSSQL_CA heeft geen zin met MSSQL_TRUST_SERVER_CERT=true (dan wordt het certificaat niet gecontroleerd)"
     );
   }
+  // De naam in het certificaat dient alleen om het certificaat te controleren.
+  if (m.MSSQL_TLS_SERVERNAME && m.MSSQL_TRUST_SERVER_CERT === "true") {
+    throw new ConfigFout(
+      "MSSQL_TLS_SERVERNAME heeft geen zin met MSSQL_TRUST_SERVER_CERT=true (dan wordt het certificaat niet gecontroleerd)"
+    );
+  }
   if (encrypt === false && !isLoopback(server.host)) {
     throw new ConfigFout(
       "MSSQL_ENCRYPT=false mag alleen voor een server op deze machine (localhost): anders gaat het wachtwoord onversleuteld over het netwerk"
     );
   }
   // Standaard vertrouwen (zoals DATABASE_SSL=no-verify bij Postgres), behalve
-  // als er een CA is opgegeven of strict gevraagd is: dan wordt er gecontroleerd.
+  // als er een CA of TLS-servernaam is opgegeven of strict gevraagd is: dan
+  // wordt er gecontroleerd.
   const trustServerCertificate =
-    m.MSSQL_TRUST_SERVER_CERT !== undefined ? m.MSSQL_TRUST_SERVER_CERT === "true" : !ca && encrypt !== "strict";
+    m.MSSQL_TRUST_SERVER_CERT !== undefined
+      ? m.MSSQL_TRUST_SERVER_CERT === "true"
+      : !ca && !m.MSSQL_TLS_SERVERNAME && encrypt !== "strict";
 
   return {
     dialect: "mssql",
