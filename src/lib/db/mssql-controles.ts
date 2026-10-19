@@ -7,7 +7,11 @@ import { heeftOudeStemmer } from "./search/mssql-query";
 // dit bestand ook.
 
 export type MssqlControles = {
-  /** SERVERPROPERTY('ProductMajorVersion'): 13 = 2016, 14 = 2017, 15 = 2019, 16 = 2022, 17 = 2025. */
+  /**
+   * SERVERPROPERTY('ProductMajorVersion'): 13 = 2016, 14 = 2017, 15 = 2019, 16 = 2022, 17 = 2025.
+   * null op Azure SQL Database en Managed Instance: die melden 12, maar draaien
+   * altijd de nieuwste engine (dus geen versie-eis en geen oude stemmer).
+   */
   hoofdversie: number | null;
   /** SERVERPROPERTY('EngineEdition'): 2 Standard, 3 Enterprise/Developer, 4 Express, 5 Azure SQL Database, 8 Managed Instance. */
   editie: number | null;
@@ -29,7 +33,8 @@ export type MssqlControles = {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function leesMssqlControles(db: Kysely<any>): Promise<MssqlControles> {
   const { rows } = await sql<MssqlControles>`
-    SELECT CAST(SERVERPROPERTY('ProductMajorVersion') AS int) AS hoofdversie,
+    SELECT CASE WHEN CAST(SERVERPROPERTY('EngineEdition') AS int) IN (5, 8) THEN NULL
+                ELSE CAST(SERVERPROPERTY('ProductMajorVersion') AS int) END AS hoofdversie,
            CAST(SERVERPROPERTY('EngineEdition') AS int) AS editie,
            CAST(SIGN(@@OPTIONS & 512) AS int) AS nocount, -- 0/1 (de bit zelf is 512)
            CAST(DATABASEPROPERTYEX(DB_NAME(), 'Collation') AS nvarchar(128)) AS collatie,

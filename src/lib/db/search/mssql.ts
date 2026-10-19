@@ -46,7 +46,9 @@ async function leesFulltextStatus(db: Db): Promise<FulltextStatus> {
   if (fulltextStatus && fulltextStatus.tot > Date.now()) return fulltextStatus;
   const { rows } = await sql<{ actief: number | null; hoofdversie: number | null }>`
     SELECT CAST(OBJECTPROPERTYEX(OBJECT_ID(N'dbo.articles'), 'TableHasActiveFulltextIndex') AS int) AS actief,
-           CAST(SERVERPROPERTY('ProductMajorVersion') AS int) AS hoofdversie
+           -- Azure (EngineEdition 5/8) meldt 12 maar is altijd de nieuwste engine.
+           CASE WHEN CAST(SERVERPROPERTY('EngineEdition') AS int) IN (5, 8) THEN NULL
+                ELSE CAST(SERVERPROPERTY('ProductMajorVersion') AS int) END AS hoofdversie
   `.execute(db);
   fulltextStatus = {
     actief: rows[0]?.actief === 1,
