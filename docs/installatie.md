@@ -640,8 +640,9 @@ Server, of op een andere.
    npm run db:mssql:controle
    ```
 
-   In hetzelfde venster werkt ook `npm run db:migrate` (de database
-   bijwerken). Zonder `db_ddladmin` voor de app (stap 4) gebruikt IT daarvoor
+   `STORAGE_DRIVER=database` volstaat hier, ook als de dienst een map
+   gebruikt: deze commando's raken geen bestanden. In hetzelfde venster werkt
+   ook `npm run db:migrate` (de database bijwerken). Zonder `db_ddladmin` voor de app (stap 4) gebruikt IT daarvoor
    in `MSSQL_USER` en `MSSQL_PASSWORD` een login met `db_ddladmin` of
    `db_owner` in de database. Sluit het venster daarna: het wachtwoord staat
    erin.
