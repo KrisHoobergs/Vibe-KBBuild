@@ -69,7 +69,14 @@ export const databaseStorage: StorageDriver = {
     const start = bereik.start;
     const einde = Math.min(bereik.einde ?? grootte - 1, grootte - 1, start + MAX_DEEL - 1);
     if (start > einde) return { data: Buffer.alloc(0), contentType: meta.content_type, grootte, bereik: { start, einde } };
-    const { rows } = await sql<{ deel: Buffer }>`
+    // SQL Server kent geen substring(… FROM … FOR …). De Postgres-tekst blijft
+    // letterlijk dezelfde (de Neon-installatie gebruikt ze).
+    const { rows } = getConfig().db.dialect === "mssql"
+      ? await sql<{ deel: Buffer }>`
+      SELECT SUBSTRING("data", ${start + 1}, ${einde - start + 1}) AS deel
+      FROM dbo.files WHERE "bucket" = ${bucket} AND "path" = ${pad}
+    `.execute(db)
+      : await sql<{ deel: Buffer }>`
       SELECT substring(data FROM ${start + 1} FOR ${einde - start + 1}) AS deel
       FROM files WHERE bucket = ${bucket} AND path = ${pad}
     `.execute(db);

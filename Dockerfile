@@ -1,5 +1,6 @@
 # Kennisbank als Docker-image, voor installaties die zelf gehost worden
-# (eigen login, gewone PostgreSQL). Zie docs/installatie.md.
+# (eigen login, gewone PostgreSQL of SQL Server). Zie docs/installatie.md.
+# De SQL Server-driver (tedious) is puur JavaScript: geen extra apt-pakketten.
 #
 #   docker compose up -d --build
 #

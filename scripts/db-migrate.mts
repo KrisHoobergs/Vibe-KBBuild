@@ -1,12 +1,13 @@
 /**
- * Databasemigraties voor installaties ZONDER Supabase (gewone PostgreSQL,
- * later SQL Server). Leest de configuratie uit de omgeving (en .env.local als
- * die bestaat; bestaande omgevingsvariabelen gaan voor).
+ * Databasemigraties voor installaties ZONDER Supabase (gewone PostgreSQL of
+ * SQL Server, volgens DB_DIALECT). Leest de configuratie uit de omgeving (en
+ * .env.local als die bestaat; bestaande omgevingsvariabelen gaan voor).
  *
  *   npm run db:migrate
  *
  * Weigert bij AUTH_DRIVER=supabase, bij een Supabase-URL en bij een database
- * die zelf Supabase-tabellen heeft.
+ * die zelf Supabase-tabellen heeft. SQL Server: zonder Full-Text Search wordt
+ * 0005_fulltext overgeslagen (en later opnieuw geprobeerd).
  */
 import { existsSync } from "node:fs";
 import path from "node:path";

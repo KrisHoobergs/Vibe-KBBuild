@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { CheckCircle2, MinusCircle, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, MinusCircle, XCircle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { controleerGezondheid, type Controle } from "@/lib/gezondheid";
 import { APP_NAME } from "@/lib/constants";
@@ -17,6 +17,8 @@ const NAMEN: Record<string, string> = {
   filesystem: "Map op de server",
   open: "Open",
   uitnodiging: "Alleen met uitnodiging",
+  "full-text": "Full-text",
+  eenvoudig: "Eenvoudig",
 };
 
 function Regel({
@@ -86,6 +88,19 @@ export default async function StatusPage() {
           controle={g.mailsleutel ?? "overgeslagen"}
           uitleg="Niet ingesteld: artikels mailen staat uit"
         />
+        {g.sqlServer && g.sqlServer.waarschuwingen.length > 0 && (
+          <div className="flex items-start gap-3 rounded-md border p-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium">Aandachtspunten SQL Server</p>
+              <ul className="space-y-0.5 break-words text-xs text-muted-foreground">
+                {g.sqlServer.waarschuwingen.map((w) => (
+                  <li key={w}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
         {g.installatie && (
           <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 pt-2 text-xs text-muted-foreground">
             <dt>Database</dt>
@@ -98,6 +113,12 @@ export default async function StatusPage() {
               <>
                 <dt>Registreren</dt>
                 <dd className="text-foreground">{NAMEN[g.installatie.registratie] ?? g.installatie.registratie}</dd>
+              </>
+            )}
+            {g.sqlServer && (
+              <>
+                <dt>Zoeken</dt>
+                <dd className="text-foreground">{NAMEN[g.sqlServer.zoeken] ?? g.sqlServer.zoeken}</dd>
               </>
             )}
           </dl>

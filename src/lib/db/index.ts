@@ -18,11 +18,12 @@ export function getDb(): Kysely<Database> {
     // niet: daar houdt attachDatabasePool de functie open (waitUntil) zolang
     // de idle-tijd loopt, en die tijd telt mee als gebruikt geheugen. Op Vercel
     // (Fluid compute) sluit attachDatabasePool ongebruikte verbindingen netjes
-    // af voordat een functie-instantie wordt bevroren.
-    const { db, pool } = maakKysely(getConfig().db, {
+    // af voordat een functie-instantie wordt bevroren. attachDatabasePool kent
+    // alleen pg (SQL Server wordt op Vercel toch geweigerd, zie config.ts).
+    const { db, pgPool } = maakKysely(getConfig().db, {
       idleTimeoutMs: process.env.VERCEL ? 5_000 : 60_000,
     });
-    if (process.env.VERCEL) attachDatabasePool(pool);
+    if (process.env.VERCEL && pgPool) attachDatabasePool(pgPool);
     globaal.__kbDb = db;
   }
   return globaal.__kbDb;

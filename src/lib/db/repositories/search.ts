@@ -1,35 +1,18 @@
 import "server-only";
 import { sql } from "kysely";
+import { getConfig } from "@/lib/config";
 import { getDb } from "@/lib/db";
 import { parseJson, toIso } from "@/lib/db/dialect";
+import { zoekMssql } from "@/lib/db/search/mssql";
+import type { ZoekParams, ZoekRij } from "@/lib/db/search/types";
 import type { ArticleStatus, SearchResult } from "@/types";
 
-type ZoekRij = {
-  id: string;
-  title: string;
-  slug: string;
-  excerpt: string | null;
-  cover_image_url: string | null;
-  status: string;
-  author_name: string;
-  published_at: Date | null;
-  updated_at: Date;
-  tags: unknown;
-  rank: number;
-};
-
 /**
- * Nederlandse full-text search. Op Postgres via de bestaande functie
+ * Nederlandse full-text search op Postgres, via de bestaande functie
  * search_articles (gewogen tsvector, websearch_to_tsquery). Benoemde argumenten,
  * omdat de Supabase-database ook nog een oudere overload met 4 argumenten heeft.
  */
-export async function searchArticlesInDb(params: {
-  query: string;
-  tagSlugs: string[] | null;
-  statuses: string[];
-  limit: number;
-  offset: number;
-}): Promise<SearchResult[]> {
+async function zoekPostgres(params: ZoekParams): Promise<ZoekRij[]> {
   // updated_at komt niet uit search_articles; via een join in dezelfde vraag,
   // in de volgorde van de functie (WITH ORDINALITY).
   const { rows } = await sql<ZoekRij>`
@@ -45,6 +28,15 @@ export async function searchArticlesInDb(params: {
     JOIN articles a ON a.id = s.id
     ORDER BY s.ordinality
   `.execute(getDb());
+  return rows;
+}
+
+/**
+ * Nederlandse full-text search. Postgres: search_articles (hierboven). SQL
+ * Server: full-text-index of eenvoudig zoeken met LIKE (src/lib/db/search/mssql.ts).
+ */
+export async function searchArticlesInDb(params: ZoekParams): Promise<SearchResult[]> {
+  const rows = getConfig().db.dialect === "mssql" ? await zoekMssql(getDb(), params) : await zoekPostgres(params);
 
   return rows.map((r) => ({
     id: r.id,

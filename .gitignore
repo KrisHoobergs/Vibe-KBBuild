@@ -34,6 +34,7 @@ yarn-error.log*
 .env*
 !.env.example
 !.env.docker.example
+!.env.mssql.example
 
 # lokale testdatabase (scripts/lokale-db.mts)
 /.lokale-db/
@@ -55,3 +56,4 @@ next-env.d.ts
 # back-ups (docs/installatie.md)
 *.dump
 *.tgz
+*.bak

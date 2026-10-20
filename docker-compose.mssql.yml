@@ -1,0 +1,107 @@
+# Kennisbank zelf hosten met SQL Server (in plaats van PostgreSQL) op één
+# Linux-server: SQL Server 2025 met Full-Text Search + de app.
+#
+#   1. cp .env.mssql.example .env      en vul de waarden in
+#   2. docker compose -f docker-compose.mssql.yml up -d --build
+#   3. open SITE_URL, ga naar /registreren: de eerste gebruiker wordt beheerder
+#
+# Hebt u al een SQL Server (bv. op Windows)? Dan hebt u dit bestand niet nodig:
+# zie docs/installatie.md, deel "SQL Server".
+#
+# SQL Server-editie: MSSQL_PID. Express is gratis, ook voor productie (max.
+# 50 GB per database vanaf 2025, 10 GB tot en met 2022; bewaar bestanden dan
+# in een map: STORAGE_DRIVER=filesystem). Developer mag NIET voor productie.
+# Standard/Enterprise: zet hier uw productsleutel.
+
+services:
+  db:
+    build: docker/mssql-fts          # officieel image + Full-Text Search (Nederlandse stemmer)
+    image: kennisbank-mssql:2025-fts
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: ${MSSQL_PID:-Express}
+      # Geldt alleen bij de allereerste start (zolang het volume mssql-data leeg is).
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?zet MSSQL_SA_PASSWORD in .env}
+      # Servercollatie (die van tempdb en master) = die van de database
+      # (docker/mssql-init/kennisbank.sql).
+      MSSQL_COLLATION: Latin1_General_100_CI_AS_SC_UTF8
+      MSSQL_MEMORY_LIMIT_MB: ${MSSQL_MEMORY_LIMIT_MB:-2048}
+      TZ: Etc/UTC
+    volumes:
+      - mssql-data:/var/opt/mssql
+      - ./docker/mssql-init:/init:ro
+    # Bewust geen poort naar buiten: alleen de app praat met de database. Wilt u
+    # er met SSMS bij, voeg dan "ports: ['127.0.0.1:1433:1433']" toe.
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -b -Q 'SELECT 1' -o /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  # Bij elke start één keer: database en app-login aanmaken of bijwerken
+  # (idempotent). De app krijgt alleen rechten in zijn eigen database.
+  # Tot 10 pogingen: vlak na de allereerste start antwoordt SQL Server al
+  # (gezond), maar is hij nog bezig met inrichten (dan soms deadlock 1205).
+  db-init:
+    image: kennisbank-mssql:2025-fts
+    pull_policy: never               # lokaal gebouwd door de dienst db
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?zet MSSQL_SA_PASSWORD in .env}
+      MSSQL_APP_PASSWORD: ${MSSQL_APP_PASSWORD:?zet MSSQL_APP_PASSWORD in .env}
+    volumes:
+      - ./docker/mssql-init:/init:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - >-
+        case "$$MSSQL_APP_PASSWORD" in *\'*|*\"*)
+        echo "MSSQL_APP_PASSWORD mag geen ' of \" bevatten"; exit 1;; esac;
+        for poging in 1 2 3 4 5 6 7 8 9 10; do
+        /opt/mssql-tools18/bin/sqlcmd -C -S db -U sa -P "$$MSSQL_SA_PASSWORD" -b
+        -i /init/kennisbank.sql
+        -v DB=kennisbank APPLOGIN=kennisbank APPWACHTWOORD="$$MSSQL_APP_PASSWORD"
+        && exit 0;
+        echo "Poging $$poging mislukt; opnieuw over 5 s"; sleep 5;
+        done; exit 1
+
+  app:
+    build: .
+    image: kennisbank:latest
+    restart: unless-stopped
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    ports:
+      # Achter een reverse proxy op dezelfde server: POORT=127.0.0.1:3000 in .env,
+      # zodat niemand de proxy kan overslaan (Docker omzeilt de firewall van de host).
+      - "${POORT:-3000}:3000"
+    environment:
+      DB_DIALECT: mssql
+      MSSQL_SERVER: db
+      MSSQL_PORT: "1433"
+      MSSQL_DATABASE: kennisbank
+      MSSQL_USER: kennisbank
+      MSSQL_PASSWORD: ${MSSQL_APP_PASSWORD:?zet MSSQL_APP_PASSWORD in .env}
+      # Verkeer blijft binnen Docker, maar toch versleuteld; de container heeft
+      # een zelfondertekend certificaat.
+      MSSQL_ENCRYPT: "true"
+      MSSQL_TRUST_SERVER_CERT: "true"
+      AUTH_DRIVER: local
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-filesystem}
+      STORAGE_DIR: /data/bestanden
+      REGISTRATIE: ${REGISTRATIE:-uitnodiging}
+      DB_AUTO_MIGRATE: "true"
+      SITE_URL: ${SITE_URL:?zet SITE_URL in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?zet BETTER_AUTH_SECRET in .env}
+      MAIL_ENCRYPTION_KEY: ${MAIL_ENCRYPTION_KEY:?zet MAIL_ENCRYPTION_KEY in .env}
+    volumes:
+      - bestanden:/data/bestanden
+
+volumes:
+  mssql-data:
+  bestanden:

@@ -12,7 +12,13 @@
     "db:vergelijk": "tsx --conditions=react-server scripts/vergelijk-datalaag.mts",
     "db:test": "tsx --conditions=react-server scripts/test-datalaag.mts",
     "db:migrate": "tsx scripts/db-migrate.mts",
-    "test:opslag": "tsx --conditions=react-server scripts/test-opslag.mts"
+    "test:opslag": "tsx --conditions=react-server scripts/test-opslag.mts",
+    "test:unit": "node --import tsx --test \"src/**/*.test.ts\" \"scripts/**/*.test.mts\"",
+    "db:mssql:controle": "tsx --conditions=react-server scripts/mssql-controle.mts",
+    "db:test:migraties:mssql": "tsx --conditions=react-server scripts/test-migraties-mssql.mts",
+    "db:test:mssql": "tsx --conditions=react-server scripts/test-datalaag-mssql.mts",
+    "test:login:mssql": "tsx --conditions=react-server scripts/test-login-mssql.mts",
+    "test:fulltext:mssql": "tsx --conditions=react-server scripts/test-fulltext-mssql.mts"
   },
   "engines": {
     "node": ">=22"
@@ -55,6 +61,8 @@
     "server-only": "^0.0.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
+    "tarn": "^3.1.2",
+    "tedious": "^20.3.8",
     "uuid": "^13.0.0",
     "zod": "^4.3.6"
   },
