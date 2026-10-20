@@ -61,8 +61,9 @@ optioneel: zonder deze instellingen ziet de kennisbank eruit zoals altijd.
   bij Docker `docker compose up -d`, bij een Windows-dienst de dienst
   herstarten. Met NSSM zet je een naam met een spatie tussen aanhalingstekens:
   `"INSTALLATIE_NAAM=Build Software"`.
-- Het oude icoon blijft gelden voor browsers die geen SVG-icoontjes tonen
-  (Safari); de titel van het tabblad verandert daar wel.
+- Het icoon is een SVG-afbeelding. Oudere browsers die dat niet kennen (zoals
+  oudere versies van Safari) tonen dan geen icoon; de titel van het tabblad
+  verandert daar wel.
 
 ---
 

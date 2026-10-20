@@ -48,6 +48,15 @@ describe("leesInstallatieWeergave", () => {
     assert.equal(afk("Kennisbank Kris", "abc"), "AB");
     assert.equal(afk("éénhoorn"), "É");
     assert.equal(afk("🚀 Team"), "🚀T");
+    // Per teken zoals een lezer het ziet: vlag heel, ß eerst naar hoofdletters.
+    assert.equal(afk("Kennisbank 🇧🇪"), "K🇧🇪");
+    assert.equal(afk("ßtraße Wiki"), "SW");
+    assert.equal(afk("x", "🇧🇪🇳🇱🇩🇪"), "🇧🇪🇳🇱");
+  });
+
+  it("knipt de naam nooit midden in een teken en laat geen ongeldige tekens door", () => {
+    assert.equal(leesInstallatieWeergave({ INSTALLATIE_NAAM: "🇧🇪".repeat(50) })!.naam, "🇧🇪".repeat(40));
+    assert.equal(leesInstallatieWeergave({ INSTALLATIE_NAAM: "Kris\ud800￿Test" })!.naam, "KrisTest");
   });
 
   it("kiest het logo", () => {

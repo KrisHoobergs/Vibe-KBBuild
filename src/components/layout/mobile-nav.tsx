@@ -48,7 +48,8 @@ export function MobileNav({ user, installatie, className }: MobileNavProps) {
             className="flex items-center gap-2"
             onClick={() => setOpen(false)}
           >
-            {/* 120 breed (zoals in de balken): zo blijft er plaats voor de sluitknop. */}
+            {/* Het logo-bestand 140 breed zoals altijd; het tekstlogo 120 breed
+                (zoals in de balken), zodat er plaats blijft voor de sluitknop. */}
             <Logo installatie={installatie} variant="wit" />
           </Link>
         </div>

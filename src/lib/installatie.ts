@@ -34,10 +34,23 @@ const MAX_NAAM = 40;
 type Env = Record<string, string | undefined>;
 
 function schoon(waarde: string | undefined): string {
-  return (waarde ?? "")
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return (
+    (waarde ?? "")
+      // Losse surrogaten en de niet-tekens U+FFFE/U+FFFF zijn ongeldig in XML (het icoon).
+      .replace(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]|[￾￿]/g, "")
+      .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  );
+}
+
+const segmenter = new Intl.Segmenter("nl", { granularity: "grapheme" });
+
+/** De eerste `max` tekens zoals een lezer ze ziet (een vlag of é telt als één). */
+function grafemen(tekst: string, max: number): string {
+  return Array.from(segmenter.segment(tekst), (s) => s.segment)
+    .slice(0, max)
+    .join("");
 }
 
 /** Accepteert RRGGBB met of zonder # (in .env en YAML begint # een commentaar). */
@@ -59,12 +72,11 @@ function contrast(a: string, b: string): number {
   return (l1 + 0.05) / (l2 + 0.05);
 }
 
-/** Eerste letter van het eerste en het laatste woord (emoji-veilig). */
+/** Eerste letter van het eerste en het laatste woord (in hoofdletters, per teken). */
 function standaardAfkorting(naam: string): string {
   const woorden = naam.split(" ").filter(Boolean);
-  const eerste = (woord: string) => Array.from(woord)[0] ?? "";
-  const tekens = woorden.length > 1 ? eerste(woorden[0]) + eerste(woorden[woorden.length - 1]) : eerste(woorden[0] ?? "");
-  return tekens.toLocaleUpperCase("nl");
+  const eerste = (woord: string) => grafemen(woord.toLocaleUpperCase("nl"), 1);
+  return woorden.length > 1 ? eerste(woorden[0]) + eerste(woorden[woorden.length - 1]) : eerste(woorden[0] ?? "");
 }
 
 /** Korte, stabiele hash (FNV-1a) voor de icoon-URL. */
@@ -78,13 +90,13 @@ function hash(tekst: string): string {
 }
 
 export function leesInstallatieWeergave(env: Env = process.env): InstallatieWeergave | null {
-  const naam = Array.from(schoon(env.INSTALLATIE_NAAM)).slice(0, MAX_NAAM).join("").trim();
+  const naam = grafemen(schoon(env.INSTALLATIE_NAAM), MAX_NAAM).trim();
   if (!naam) return null;
 
   const kleur = leesKleur(env.INSTALLATIE_KLEUR);
   const tekstkleur = contrast(kleur, DONKER) >= contrast(kleur, WIT) ? DONKER : WIT;
-  const eigen = Array.from(schoon(env.INSTALLATIE_AFKORTING)).slice(0, 2).join("");
-  const afkorting = (eigen ? eigen.toLocaleUpperCase("nl") : standaardAfkorting(naam)) || "?";
+  const eigen = grafemen(schoon(env.INSTALLATIE_AFKORTING).toLocaleUpperCase("nl"), 2);
+  const afkorting = eigen || standaardAfkorting(naam) || "?";
   const logo = schoon(env.INSTALLATIE_LOGO).toLowerCase() === "tekst" ? "tekst" : "afbeelding";
 
   return {
@@ -116,7 +128,7 @@ function xml(tekst: string): string {
  * rand houdt het zichtbaar op een witte tabbladbalk.
  */
 export function icoonSvg(w: InstallatieWeergave): string {
-  const grootte = Array.from(w.afkorting).length > 1 ? 15 : 20;
+  const grootte = Array.from(segmenter.segment(w.afkorting)).length > 1 ? 15 : 20;
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">` +
     `<rect x="1" y="1" width="30" height="30" rx="7" fill="${w.kleur}" stroke="#023B49" stroke-width="2"/>` +
