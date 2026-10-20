@@ -99,6 +99,11 @@ services:
       SITE_URL: ${SITE_URL:?zet SITE_URL in .env}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?zet BETTER_AUTH_SECRET in .env}
       MAIL_ENCRYPTION_KEY: ${MAIL_ENCRYPTION_KEY:?zet MAIL_ENCRYPTION_KEY in .env}
+      # Herkenbaar maken (optioneel): naam, kleur en logo van deze kennisbank.
+      INSTALLATIE_NAAM: ${INSTALLATIE_NAAM:-}
+      INSTALLATIE_KLEUR: ${INSTALLATIE_KLEUR:-}
+      INSTALLATIE_LOGO: ${INSTALLATIE_LOGO:-}
+      INSTALLATIE_AFKORTING: ${INSTALLATIE_AFKORTING:-}
     volumes:
       - bestanden:/data/bestanden
 

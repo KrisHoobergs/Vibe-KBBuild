@@ -5,14 +5,17 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
 import { TopbarActionsSlotProvider } from "@/components/layout/topbar-actions";
 import { ThemeSync } from "@/components/theme-sync";
+import type { InstallatieWeergave } from "@/lib/installatie";
 import type { Profile } from "@/types";
 
 interface DashboardShellProps {
   user: Profile;
+  /** Naam/logo van deze installatie (null: het standaardlogo). */
+  installatie: InstallatieWeergave | null;
   children: React.ReactNode;
 }
 
-export function DashboardShell({ user, children }: DashboardShellProps) {
+export function DashboardShell({ user, installatie, children }: DashboardShellProps) {
   // Plek in de topbar waar pagina's eigen knoppen in kunnen zetten.
   const [actionsSlot, setActionsSlot] = useState<HTMLDivElement | null>(null);
   // Hier i.p.v. in de sidebar: de topbar toont het logo zodra de sidebar
@@ -25,12 +28,14 @@ export function DashboardShell({ user, children }: DashboardShellProps) {
         <ThemeSync theme={user.theme} />
         <Sidebar
           user={user}
+          installatie={installatie}
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed((c) => !c)}
         />
         <div className="flex flex-1 flex-col overflow-hidden">
           <Topbar
             user={user}
+            installatie={installatie}
             sidebarCollapsed={sidebarCollapsed}
             actionsRef={setActionsSlot}
           />

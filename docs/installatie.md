@@ -36,6 +36,33 @@ installaties die `main` volgen.
 - **Bewaar de instellingen veilig**, vooral `MAIL_ENCRYPTION_KEY`: zonder
   dezelfde sleutel zijn de opgeslagen Gmail-wachtwoorden na het terugzetten
   van een back-up onleesbaar.
+- **Meerdere kennisbanken?** Geef elke kennisbank een eigen naam en kleur,
+  zodat je ziet in welke je bezig bent (zie hieronder).
+
+### Je kennisbank herkenbaar maken (A tot en met E)
+
+Heb je meer dan één kennisbank (bv. privé en werk), geef ze dan elk een eigen
+naam en kleur. Die verschijnen op het tabblad (titel en icoon), op de
+inlogpagina en desgewenst linksboven in plaats van het logo. Alles is
+optioneel: zonder deze instellingen ziet de kennisbank eruit zoals altijd.
+
+| Sleutel | Waarde | Voorbeeld |
+|---|---|---|
+| `INSTALLATIE_NAAM` | de naam, max. 40 tekens. Het tabblad toont "naam · Knowledge Build" | `Build Software` |
+| `INSTALLATIE_KLEUR` | kleur van het tabblad-icoon (en van het tekstlogo), als zes tekens **zonder** `#`; standaard goud | `60A5FA` |
+| `INSTALLATIE_LOGO` | `afbeelding` (standaard: het logo) of `tekst` (de naam als logo linksboven) | `tekst` |
+| `INSTALLATIE_AFKORTING` | 1 of 2 tekens op het tabblad-icoon; standaard de eerste letter van het eerste en het laatste woord | `K` |
+
+- **Kleur:** kies een lichte, felle kleur; die valt op tegen de donkere
+  balken. Goed werken bv. `FCB50D` (goud), `60A5FA` (lichtblauw), `4ADE80`
+  (groen) en `F472B6` (roze). Zet de kleur zonder `#`: in `.env` en in
+  Docker-bestanden begint een `#` een commentaar.
+- **Wijzigen** werkt pas na een nieuwe start: bij Vercel opnieuw deployen,
+  bij Docker `docker compose up -d`, bij een Windows-dienst de dienst
+  herstarten. Met NSSM zet je een naam met een spatie tussen aanhalingstekens:
+  `"INSTALLATIE_NAAM=Build Software"`.
+- Het oude icoon blijft gelden voor browsers die geen SVG-icoontjes tonen
+  (Safari); de titel van het tabblad verandert daar wel.
 
 ---
 

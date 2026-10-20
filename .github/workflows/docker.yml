@@ -39,6 +39,10 @@ jobs:
             echo "SITE_URL=http://localhost:3000"
             echo "BETTER_AUTH_SECRET=$(openssl rand -base64 36 | tr -d '\n')"
             echo "MAIL_ENCRYPTION_KEY=$(openssl rand -base64 32 | tr -d '\n')"
+            # Naam en tekstlogo van de installatie; kleur bewust zonder #.
+            echo "INSTALLATIE_NAAM=CI-test"
+            echo "INSTALLATIE_KLEUR=60A5FA"
+            echo "INSTALLATIE_LOGO=tekst"
           } > .env
 
       - name: Bouwen en starten
@@ -65,6 +69,14 @@ jobs:
           # Draait als niet-root-gebruiker, en die mag in het bestandenvolume schrijven.
           test "$(docker compose exec -T app id -un)" = "node"
           docker compose exec -T app sh -c 'echo test > /data/bestanden/.schrijftest && rm /data/bestanden/.schrijftest'
+          # De naam van de installatie komt uit de env bij het starten (het image
+          # is zonder gebouwd): op de inlogpagina, in de titel van een 404-pagina
+          # (via /api/: andere onbekende paden sturen eerst naar /inloggen) en
+          # als tabblad-icoon.
+          curl -s http://localhost:3000/inloggen | grep -q "CI-test"
+          curl -s http://localhost:3000/api/bestaat-niet | grep -q "<title>CI-test"
+          curl -sI http://localhost:3000/api/icoon | grep -qi "content-type: image/svg+xml"
+          curl -s http://localhost:3000/api/icoon | grep -q 'fill="#60A5FA"'
 
       - name: Back-up zoals in docs/installatie.md
         run: |
