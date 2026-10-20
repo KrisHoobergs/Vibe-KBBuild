@@ -52,6 +52,7 @@ optioneel: zonder deze instellingen ziet de kennisbank eruit zoals altijd.
 | `INSTALLATIE_KLEUR` | kleur van het tabblad-icoon (en van het tekstlogo), als zes tekens **zonder** `#`; standaard goud | `60A5FA` |
 | `INSTALLATIE_LOGO` | `afbeelding` (standaard: het logo) of `tekst` (de naam als logo linksboven) | `tekst` |
 | `INSTALLATIE_AFKORTING` | 1 of 2 tekens op het tabblad-icoon; standaard de eerste letter van het eerste en het laatste woord | `K` |
+| `INSTALLATIE_ICOON` | in plaats van het icoon met letters: een eigen icoonbestand uit de map `public` (`.png`, `.ico` of `.svg`), of `standaard` voor het oude icoon | `/iconen/build-software-32.png` |
 
 - **Kleur:** kies een lichte, felle kleur; die valt op tegen de donkere
   balken. Goed werken bv. `FCB50D` (goud), `60A5FA` (lichtblauw), `4ADE80`
