@@ -30,9 +30,12 @@ export async function generateMetadata(): Promise<Metadata> {
     title: paginaTitel(installatie),
     description: "Kennisbank voor het team",
     icons: {
-      icon: installatie
-        ? [{ url: `/api/icoon?v=${installatie.versie}`, type: "image/svg+xml" }]
-        : [{ url: "/favicon.ico", type: "image/x-icon" }],
+      icon: [
+        installatie?.icoon ??
+          (installatie
+            ? { url: `/api/icoon?v=${installatie.versie}`, type: "image/svg+xml" }
+            : { url: "/favicon.ico", type: "image/x-icon" }),
+      ],
     },
   };
 }

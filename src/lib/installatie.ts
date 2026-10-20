@@ -20,6 +20,11 @@ export type InstallatieWeergave = {
   afkorting: string;
   /** "afbeelding": het standaardlogo; "tekst": de naam als logo. */
   logo: "afbeelding" | "tekst";
+  /**
+   * Eigen tabblad-icoon (INSTALLATIE_ICOON): een bestand in public/ of het oude
+   * standaardicoon. null: het gegenereerde icoon met de afkorting (/api/icoon).
+   */
+  icoon: { url: string; type: string } | null;
   /** Verandert als het icoon verandert (cache-busting van /api/icoon). */
   versie: string;
 };
@@ -79,6 +84,26 @@ function standaardAfkorting(naam: string): string {
   return woorden.length > 1 ? eerste(woorden[0]) + eerste(woorden[woorden.length - 1]) : eerste(woorden[0] ?? "");
 }
 
+const ICOON_TYPES: Record<string, string> = {
+  png: "image/png",
+  ico: "image/x-icon",
+  svg: "image/svg+xml",
+};
+
+/**
+ * INSTALLATIE_ICOON: "standaard" (het oude favicon.ico) of het pad van een
+ * bestand in public/ (bv. /iconen/build-software-32.png). Alleen een eenvoudig
+ * pad op deze site: geen andere website, geen "..". Anders null (het
+ * gegenereerde icoon).
+ */
+function leesIcoon(waarde: string | undefined): InstallatieWeergave["icoon"] {
+  const pad = schoon(waarde);
+  if (pad.toLowerCase() === "standaard") return { url: "/favicon.ico", type: "image/x-icon" };
+  const m = /^\/(?!\/)[a-z0-9_\-/]+\.(png|ico|svg)$/i.exec(pad);
+  if (!m || pad.split("/").some((deel) => deel === "." || deel === "..")) return null;
+  return { url: pad, type: ICOON_TYPES[m[1].toLowerCase()] };
+}
+
 /** Korte, stabiele hash (FNV-1a) voor de icoon-URL. */
 function hash(tekst: string): string {
   let h = 0x811c9dc5;
@@ -98,6 +123,7 @@ export function leesInstallatieWeergave(env: Env = process.env): InstallatieWeer
   const eigen = grafemen(schoon(env.INSTALLATIE_AFKORTING).toLocaleUpperCase("nl"), 2);
   const afkorting = eigen || standaardAfkorting(naam) || "?";
   const logo = schoon(env.INSTALLATIE_LOGO).toLowerCase() === "tekst" ? "tekst" : "afbeelding";
+  const icoon = leesIcoon(env.INSTALLATIE_ICOON);
 
   return {
     naam,
@@ -105,6 +131,7 @@ export function leesInstallatieWeergave(env: Env = process.env): InstallatieWeer
     tekstkleur,
     afkorting,
     logo,
+    icoon,
     versie: hash(`${ICOON_VERSIE}|${kleur}|${tekstkleur}|${afkorting}`),
   };
 }

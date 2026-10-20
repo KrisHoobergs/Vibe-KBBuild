@@ -67,6 +67,19 @@ describe("leesInstallatieWeergave", () => {
     assert.equal(logo("iets anders"), "afbeelding");
   });
 
+  it("leest een eigen tabblad-icoon, alleen als eenvoudig pad op deze site", () => {
+    const icoon = (i?: string) => leesInstallatieWeergave({ INSTALLATIE_NAAM: "x", INSTALLATIE_ICOON: i })!.icoon;
+    assert.equal(icoon(undefined), null);
+    assert.equal(icoon(""), null);
+    assert.deepEqual(icoon("/iconen/build-software-32.png"), { url: "/iconen/build-software-32.png", type: "image/png" });
+    assert.deepEqual(icoon(" /favicon.ico "), { url: "/favicon.ico", type: "image/x-icon" });
+    assert.deepEqual(icoon("/logo.SVG"), { url: "/logo.SVG", type: "image/svg+xml" });
+    assert.deepEqual(icoon("Standaard"), { url: "/favicon.ico", type: "image/x-icon" });
+    for (const fout of ["https://elders.be/i.png", "//elders.be/i.png", "/../geheim.png", "iconen/x.png", "/x.gif", "/a b.png", "/x.png?v=1", 'javascript:alert(1)']) {
+      assert.equal(icoon(fout), null, fout);
+    }
+  });
+
   it("geeft een stabiele versie die meeverandert met het icoon", () => {
     const v = (env: Record<string, string>) => leesInstallatieWeergave({ INSTALLATIE_NAAM: "Kris", ...env })!.versie;
     assert.match(v({}), /^[0-9a-z]+$/);
