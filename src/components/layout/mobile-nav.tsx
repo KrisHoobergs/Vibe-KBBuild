@@ -2,16 +2,18 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Menu, FileText, Tags, Settings, Users, Activity } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import type { InstallatieWeergave } from "@/lib/installatie";
 import type { Profile } from "@/types";
+import { Logo } from "./logo";
 
 interface MobileNavProps {
   user: Profile;
+  installatie: InstallatieWeergave | null;
   className?: string;
 }
 
@@ -26,7 +28,7 @@ const adminItems = [
   { href: "/status", label: "Systeemstatus", icon: Activity },
 ];
 
-export function MobileNav({ user, className }: MobileNavProps) {
+export function MobileNav({ user, installatie, className }: MobileNavProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -46,7 +48,9 @@ export function MobileNav({ user, className }: MobileNavProps) {
             className="flex items-center gap-2"
             onClick={() => setOpen(false)}
           >
-            <Image src="/logo.png" alt="Knowledge Build" width={140} height={32} />
+            {/* Het logo-bestand 140 breed zoals altijd; het tekstlogo 120 breed
+                (zoals in de balken), zodat er plaats blijft voor de sluitknop. */}
+            <Logo installatie={installatie} variant="wit" />
           </Link>
         </div>
         <nav className="space-y-1 p-3">

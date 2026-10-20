@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   FileText,
@@ -19,10 +18,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import type { InstallatieWeergave } from "@/lib/installatie";
 import type { Profile } from "@/types";
+import { Logo } from "./logo";
 
 interface SidebarProps {
   user: Profile;
+  installatie: InstallatieWeergave | null;
   collapsed: boolean;
   onToggle: () => void;
 }
@@ -38,7 +40,7 @@ const adminItems = [
   { href: "/status", label: "Systeemstatus", icon: Activity },
 ];
 
-export function Sidebar({ user, collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ user, installatie, collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname();
 
   return (
@@ -67,13 +69,7 @@ export function Sidebar({ user, collapsed, onToggle }: SidebarProps) {
           {/* Ingeklapt is hier geen plaats; dan staat het logo in de topbar. */}
           {!collapsed && (
             <Link href="/artikelen" className="shrink-0">
-              <Image
-                src="/logo.png"
-                alt="Knowledge Build"
-                width={120}
-                height={28}
-                className="brightness-0 invert"
-              />
+              <Logo installatie={installatie} variant="balk" />
             </Link>
           )}
         </div>

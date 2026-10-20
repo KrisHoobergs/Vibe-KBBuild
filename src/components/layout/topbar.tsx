@@ -1,25 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { ThemeToggle } from "./theme-toggle";
 import { UserMenu } from "./user-menu";
 import { MobileNav } from "./mobile-nav";
 import { topbarButtonClass } from "./topbar-actions";
 import { cn } from "@/lib/utils";
+import type { InstallatieWeergave } from "@/lib/installatie";
 import type { Profile } from "@/types";
+import { Logo } from "./logo";
 
 interface TopbarProps {
   user: Profile;
+  installatie: InstallatieWeergave | null;
   sidebarCollapsed: boolean;
   actionsRef?: React.Ref<HTMLDivElement>;
 }
 
-export function Topbar({ user, sidebarCollapsed, actionsRef }: TopbarProps) {
+export function Topbar({ user, installatie, sidebarCollapsed, actionsRef }: TopbarProps) {
   // @container + dezelfde padding (px-4 md:px-6) en schuifbalkruimte
   // (scrollbar-gutter) als <main>: zo is de inhoudsbreedte van de topbar
   // gelijk aan die van de pagina en kan <TopbarActions alignToColumn> de
-  // knoppen op de paginakolom uitlijnen. --topbar-lead = logo (120) + gap (16).
+  // knoppen op de paginakolom uitlijnen. --topbar-lead = logo (120, ook het
+  // tekstlogo, zie Logo) + gap (16).
   return (
     <header
       className={cn(
@@ -27,7 +30,7 @@ export function Topbar({ user, sidebarCollapsed, actionsRef }: TopbarProps) {
         sidebarCollapsed && "[--topbar-lead:136px]"
       )}
     >
-      <MobileNav user={user} className={topbarButtonClass} />
+      <MobileNav user={user} installatie={installatie} className={topbarButtonClass} />
 
       {/* Vanaf md staat het logo in de sidebar; hier alleen op mobiel of
           wanneer de sidebar ingeklapt is. */}
@@ -35,13 +38,7 @@ export function Topbar({ user, sidebarCollapsed, actionsRef }: TopbarProps) {
         href="/artikelen"
         className={cn("shrink-0", !sidebarCollapsed && "md:hidden")}
       >
-        <Image
-          src="/logo.png"
-          alt="Knowledge Build"
-          width={120}
-          height={28}
-          className="brightness-0 invert"
-        />
+        <Logo installatie={installatie} variant="balk" />
       </Link>
 
       {/* Paginaknoppen via <TopbarActions>. Op mobiel is hier geen plek;
